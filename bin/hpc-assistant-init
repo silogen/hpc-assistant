@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+# Copyright Advanced Micro Devices, Inc.
+#
+# SPDX-License-Identifier: MIT
+#
+# Initialize HPC Assistant agent config in a project directory.
+# Used after `module load hpc-assistant` on LUMI.
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: hpc-assistant-init [OPTIONS] [PROJECT_DIR]
+
+Install site skills and agent config files into PROJECT_DIR (default: current
+directory). Does not start services or prompt for API tokens.
+
+Options:
+  -d, --dir DIR           Project directory (default: $PWD)
+  -f, --force             Overwrite existing AGENTS.md / opencode.json / CLAUDE.md
+  --framework NAME        opencode (default) or claude-code
+  --inference NAME        anthropic (default) or aitta. Applies to both
+                          frameworks. claude-code + aitta needs the LiteLLM
+                          proxy SIF; see --sif-path.
+  --sif-path PATH         Path to aitta-proxy.sif (claude-code + aitta only).
+  --site NAME             HPC site (default: LUMI)
+  --geak                  LUMI only: install GEAK skills + hooks/plugin + job
+                          scripts (same as setup.sh when GEAK is enabled).
+                          SLURM jobs use the LUMI multitorch image and bootstrap
+                          GEAK in-job via setup-geak.sh (see geak/GEAK.md).
+  --no-save-config        Do not write ~/.config/hpc-assistant/config.env
+  -h, --help              Show this help
+
+Examples:
+  module load hpc-assistant
+  cd ~/projects/myapp && hpc-assistant-init
+  export AITTA_TOKEN=... && opencode
+
+  module load Local-LAIF lumi-aif-agents hpc-assistant
+  hpc-assistant-init -d ~/projects/myapp
+
+  # Claude Code against Aitta (requires the proxy SIF + launch.sh):
+  hpc-assistant-init --framework claude-code --inference aitta \
+    --sif-path ~/.local/share/hpc-assistant/sif/aitta-proxy.sif
+
+  # LUMI + OpenCode + GEAK (multitorch in-job bootstrap):
+  export GEAK_ANTHROPIC_API_KEY=sk-ant-...
+  hpc-assistant-init --geak
+EOF
+}
+
+HPC_ASSISTANT_ROOT="${HPC_ASSISTANT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+PROJECT_TARGET="${PWD}"
+FORCE_CONFIG_OVERWRITE=false
+AGENT_FRAMEWORK="opencode"
+INFERENCE_BACKEND="anthropic"
+AITTA_PROXY_SIF="${AITTA_PROXY_SIF:-}"
+HPC_SITE="LUMI"
+USE_DEFAULTS=true
+KB_BACKEND="remote-mcp"
+SAVE_CONFIG=true
+GEAK_ENABLED=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -d|--dir)
+      PROJECT_TARGET="$2"
+      shift 2
+      ;;
+    -f|--force)
+      FORCE_CONFIG_OVERWRITE=true
+      shift
+      ;;
+    --framework)
+      AGENT_FRAMEWORK="$2"
+      shift 2
+      ;;
+    --inference)
+      INFERENCE_BACKEND="$2"
+      shift 2
+      ;;
+    --sif-path)
+      AITTA_PROXY_SIF="$2"
+      shift 2
+      ;;
+    --site)
+      HPC_SITE="$2"
+      shift 2
+      ;;
+    --geak)
+      GEAK_ENABLED=true
+      shift
+      ;;
+    --no-save-config)
+      SAVE_CONFIG=false
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+    *)
+      PROJECT_TARGET="$1"
+      shift
+      ;;
+  esac
+done
+
+PROJECT_TARGET="$(cd "$PROJECT_TARGET" && pwd)"
+
+export HPC_ASSISTANT_ROOT
+export PROJECT_DIR="$HPC_ASSISTANT_ROOT"
+export SETUP_DIR="$HPC_ASSISTANT_ROOT/setup"
+export SKILLS_DIR="$HPC_ASSISTANT_ROOT/skills"
+export FORCE_CONFIG_OVERWRITE
+export USE_DEFAULTS
+export KB_BACKEND
+export INFERENCE_BACKEND
+export AGENT_FRAMEWORK
+export HPC_SITE
+export AITTA_PROXY_SIF
+export GEAK_ENABLED
+
+# shellcheck source=../setup/config.sh
+source "$SETUP_DIR/config.sh"
+
+get_site_config "$HPC_SITE"
+
+if [[ "${GEAK_ENABLED:-false}" == "true" ]]; then
+  if [[ "$HPC_SITE" != "LUMI" ]]; then
+    echo "ERROR: --geak is only supported for site LUMI (got: $HPC_SITE)" >&2
+    exit 1
+  fi
+  if [[ "$AGENT_FRAMEWORK" != "claude-code" && "$AGENT_FRAMEWORK" != "opencode" ]]; then
+    echo "ERROR: --geak requires --framework opencode or claude-code" >&2
+    exit 1
+  fi
+  SITE_SKILLS="$SITE_SKILLS $GEAK_SKILLS"
+fi
+
+# Claude Code + Aitta needs the LiteLLM proxy SIF. Default the path if the user
+# didn't pass --sif-path, and warn loudly that this combination requires the
+# proxy (started by launch.sh), unlike OpenCode which talks to Aitta directly.
+if [[ "$AGENT_FRAMEWORK" == "claude-code" ]] && [[ "$INFERENCE_BACKEND" == "aitta" ]]; then
+  AITTA_PROXY_SIF="${AITTA_PROXY_SIF:-$DEFAULT_SIF_DIR/aitta-proxy.sif}"
+  export AITTA_PROXY_SIF
+fi
+
+echo "HPC Assistant — project init"
+echo "  Install root : $HPC_ASSISTANT_ROOT"
+echo "  Project dir    : $PROJECT_TARGET"
+echo "  Site           : $HPC_SITE"
+echo "  Framework      : $AGENT_FRAMEWORK"
+echo "  Knowledge base : $KB_BACKEND"
+echo "  Inference      : $INFERENCE_BACKEND"
+if [[ "$AGENT_FRAMEWORK" == "claude-code" ]] && [[ "$INFERENCE_BACKEND" == "aitta" ]]; then
+  echo "  Proxy SIF      : $AITTA_PROXY_SIF"
+fi
+if [[ "${GEAK_ENABLED:-false}" == "true" ]]; then
+  echo "  GEAK           : enabled (lumi-multitorch + setup-geak.sh)"
+fi
+echo ""
+
+if [[ "$AGENT_FRAMEWORK" == "claude-code" ]] && [[ "$INFERENCE_BACKEND" == "aitta" ]]; then
+  echo "WARNING: Claude Code + Aitta requires the LiteLLM proxy (aitta-proxy.sif)."
+  echo "         OpenCode talks to Aitta directly, but Claude Code only speaks the"
+  echo "         Anthropic API, so requests must go through the proxy."
+  if [[ ! -f "$AITTA_PROXY_SIF" ]]; then
+    echo "         SIF not found at: $AITTA_PROXY_SIF"
+    echo "         Build/pull it (see README) or pass --sif-path, then run:"
+    echo "             bash $SETUP_DIR/setup.sh     # save Aitta credentials"
+    echo "             bash $SETUP_DIR/launch.sh    # starts the proxy + Claude Code"
+  fi
+  echo ""
+fi
+
+case "$AGENT_FRAMEWORK" in
+  opencode)
+    configure_opencode_project "$PROJECT_TARGET"
+    ;;
+  claude-code)
+    configure_claude_code_project "$PROJECT_TARGET"
+    ;;
+  *)
+    echo "ERROR: Unsupported framework: $AGENT_FRAMEWORK" >&2
+    exit 1
+    ;;
+esac
+
+if [[ "${GEAK_ENABLED:-false}" == "true" ]]; then
+  if ! prompt_geak_third_party_download_notice "$PROJECT_TARGET"; then
+    echo "ERROR: GEAK requires accepting the third-party download notice." >&2
+    exit 1
+  fi
+  install_geak_into_project "$PROJECT_TARGET"
+fi
+
+if [[ "$SAVE_CONFIG" == "true" ]]; then
+  save_module_init_config
+  echo ""
+  echo "Saved module defaults to $CONFIG_FILE"
+fi
+
+echo ""
+echo "Next steps:"
+echo "  cd $PROJECT_TARGET"
+case "$AGENT_FRAMEWORK" in
+  opencode)
+    if [[ "$INFERENCE_BACKEND" == "aitta" ]]; then
+      echo "  export AITTA_TOKEN=<your-token>"
+      echo "  opencode    # or: bash $SETUP_DIR/launch.sh (after saving credentials via setup.sh)"
+    else
+      echo "  export ANTHROPIC_API_KEY=<your-key>"
+      echo "  opencode"
+    fi
+    if [[ "${GEAK_ENABLED:-false}" == "true" ]]; then
+      echo ""
+      echo "  GEAK jobs call Anthropic from the compute node. Set once before init"
+      echo "  (writes .anthropic_api_key) or create the file manually:"
+      echo "    export GEAK_ANTHROPIC_API_KEY=sk-ant-..."
+      echo "    hpc-assistant-init --geak --force   # refresh key file if needed"
+      echo "  SLURM jobs use lumi-multitorch (see geak/run-geak.sbatch)."
+      echo "  Load: module use /appl/local/laifs/modules && module load lumi-aif-singularity-bindings"
+    fi
+    ;;
+  claude-code)
+    if [[ "$INFERENCE_BACKEND" == "aitta" ]]; then
+      echo "  # Claude Code + Aitta runs through the LiteLLM proxy; launch.sh starts it."
+      echo "  bash $SETUP_DIR/setup.sh     # one-time: pull aitta-proxy.sif + save credentials"
+      echo "  bash $SETUP_DIR/launch.sh    # starts the proxy (hosted_vllm) + Claude Code"
+    else
+      echo "  export ANTHROPIC_API_KEY=<your-key>"
+      echo "  claude    # or: bash $SETUP_DIR/launch.sh (after saving credentials via setup.sh)"
+    fi
+    ;;
+esac

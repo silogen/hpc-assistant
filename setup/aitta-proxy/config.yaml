@@ -1,0 +1,62 @@
+# Copyright Advanced Micro Devices, Inc.
+#
+# SPDX-License-Identifier: MIT
+#
+# LiteLLM proxy configuration for the Aitta inference backend.
+#
+# This replaces the previous hand-written FastAPI translation proxy. LiteLLM
+# exposes the Anthropic Messages API (`/v1/messages`) that Claude Code speaks
+# and translates requests to the OpenAI-compatible Aitta endpoint, then
+# translates the response back to Anthropic format.
+#
+# Everything is driven by environment variables passed in when the container
+# starts, so the published image stays generic (no secrets, URLs, or model
+# names baked in):
+#
+#   AITTA_TOKEN     - Aitta API token (used to authenticate against Aitta).
+#   AITTA_API_BASE  - OpenAI-compatible base URL, e.g.
+#                     https://api-staging-aitta.2.rahtiapp.fi/openai/v1
+#   LITELLM_MODEL   - The target model with a `hosted_vllm/` routing prefix,
+#                     e.g. `hosted_vllm/openai/gpt-oss-120b`. LiteLLM strips the
+#                     `hosted_vllm/` prefix to pick the OpenAI-compatible
+#                     provider and forwards the remainder (`openai/gpt-oss-120b`)
+#                     to Aitta verbatim as the model name. The launch scripts
+#                     derive this from the user-facing TARGET_MODEL.
+#
+#                     Why hosted_vllm and not openai? The `openai` provider (a)
+#                     routes Anthropic /v1/messages through the OpenAI Responses
+#                     API (/responses), which Aitta doesn't implement, and (b)
+#                     strips a leading `openai/` from the model name, mangling
+#                     Aitta ids. hosted_vllm avoids both.
+#
+# Claude Code selects this deployment by its user-facing name (`aitta`); the
+# launch script exports ANTHROPIC_MODEL=aitta so every request maps here.
+#
+# ── Changing the model ────────────────────────────────────────────────────────
+# To use a different Aitta model, the recommended way is to set the user-facing
+# TARGET_MODEL (via the setup wizard, or `TARGET_MODEL=...` in your credentials
+# file) — the launch scripts inject it here as LITELLM_MODEL, so no rebuild is
+# needed. Known Aitta models (TARGET_MODEL values; the launch scripts add the
+# `hosted_vllm/` routing prefix automatically):
+#
+#   openai/gpt-oss-120b                 # default
+#   openai/gpt-oss-20b
+#   LumiOpen/Llama-Poro-2-70B-Instruct
+#
+# Alternatively, replace the `os.environ/LITELLM_MODEL` value below with a
+# literal model name to hard-code a default into the image — note this only
+# takes effect after the aitta-proxy SIF is rebuilt.
+
+model_list:
+  - model_name: aitta
+    litellm_params:
+      # Driven by TARGET_MODEL at runtime (see note above). To hard-code a
+      # default instead, e.g.: model: hosted_vllm/openai/gpt-oss-120b
+      model: os.environ/LITELLM_MODEL
+      api_base: os.environ/AITTA_API_BASE
+      api_key: os.environ/AITTA_TOKEN
+
+litellm_settings:
+  # Claude Code sends parameters some OpenAI-compatible backends reject;
+  # drop the unsupported ones instead of failing the request.
+  drop_params: true

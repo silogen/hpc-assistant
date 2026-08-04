@@ -1,0 +1,66 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "aitta": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Aitta Inference Service",
+      "options": {
+        "baseURL": "{{AITTA_API_BASE}}",
+        "apiKey": "{env:AITTA_TOKEN}"
+      },
+      "models": {
+        "{{TARGET_MODEL}}": {
+          "name": "{{TARGET_MODEL}}"
+        }
+      }
+    }
+  },
+  "model": "aitta/{{TARGET_MODEL}}",
+  "permission": {
+    "bash": {
+      "*": "ask",
+      "cat *": "allow",
+      "ls *": "allow",
+      "pwd": "allow",
+      "head *": "allow",
+      "tail *": "allow",
+      "wc *": "allow",
+      "find *": "allow",
+      "which *": "allow",
+      "echo *": "allow",
+      "grep *": "allow",
+      "diff *": "allow",
+      "env": "allow",
+      "whoami": "allow",
+      "hostname": "allow",
+      "date *": "allow",
+      "git *": "ask",
+      "git push *": "ask",
+      "module *": "ask",
+      "squeue *": "allow",
+      "sacct *": "allow",
+      "scontrol show *": "allow",
+      "sbatch *": "ask",
+      "scancel *": "ask",
+      "srun *": "ask",
+      "salloc *": "ask",
+      "rm *": "ask",
+      "rm -rf *": "deny",
+      "chmod *": "ask",
+      "chown *": "deny",
+      "dd *": "deny",
+      "mkfs *": "deny",
+      "kill -9 *": "deny",
+      "killall *": "deny",
+      "reboot *": "deny",
+      "shutdown *": "deny",
+      "singularity *": "ask",
+      "apptainer *": "ask"
+    },
+    "edit": "ask",
+    "external_directory": "ask",
+    "doom_loop": "deny"
+  },
+  "mcp": "{{OC_MCP_BLOCK}}",
+  "instructions": ["AGENTS.md"]
+}

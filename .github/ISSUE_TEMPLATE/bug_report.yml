@@ -1,0 +1,65 @@
+# Copyright Advanced Micro Devices, Inc.
+#
+# SPDX-License-Identifier: MIT
+
+name: Bug Report
+description: Report a bug in HPC Assistant
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. For security vulnerabilities,
+        use [Private Vulnerability Reporting](https://github.com/silogen/hpc-assistant/security/advisories/new)
+        instead — do not file a public issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Commands, configuration, and environment details.
+      placeholder: |
+        1. HPC site: LUMI
+        2. Agent framework: OpenCode
+        3. Run `bash setup/setup.sh`
+        4. See error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: HPC site, agent framework, KB backend, inference backend, container runtime.
+      placeholder: |
+        - Site: LUMI
+        - Framework: OpenCode
+        - KB backend: remote-mcp
+        - Inference: Aitta
+        - Container runtime: Apptainer 1.x
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste sanitized output. Remove API keys and tokens.
+    validations:
+      required: false

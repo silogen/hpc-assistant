@@ -1,0 +1,5 @@
+langchain==1.2.11
+langchain-community==0.4.1
+chromadb==1.5.5
+unstructured==0.21.5
+markdown

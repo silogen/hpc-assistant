@@ -1,0 +1,173 @@
+# =============================================================================
+# Environment files
+# =============================================================================
+.env
+.env.*
+*.env
+!.env.example
+!.env.template
+!.env.sample
+
+# =============================================================================
+# Credentials, secrets, and keys
+# =============================================================================
+credentials.env
+llm.env
+.anthropic_api_key
+.aitta_token
+secrets/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+*.kdbx
+
+# =============================================================================
+# Project artifacts
+# =============================================================================
+# Singularity / Apptainer container images
+*.sif
+
+# ChromaDB persistent data
+chroma_data/
+
+# Cloned HPC documentation sources (re-fetched by setup.sh)
+docs/
+
+# Logs
+logs/
+*.log
+
+# Slurm output
+slurm-*.out
+slurm-*.err
+
+# =============================================================================
+# Agent framework generated files (rendered from setup/templates/ by setup.sh)
+# =============================================================================
+# Claude Code — logs only; settings.json and skills/ are committed
+.claude/logs/
+.claude/skills/
+
+# GEAK runtime files copied to project root by setup.sh (sources live in geak/)
+geak-output/
+.git-credentials
+/run-geak.sbatch
+/setup-geak.sh
+/GEAK_THIRD_PARTY_DOWNLOAD_NOTICE.txt
+/geak-download-notice.sh
+.geak-third-party-download-accepted
+/matmul_kernel.py
+/.claude/agents/
+/.claude/hooks/
+
+# OpenCode — config files rendered at install time; skills/ installed by setup.sh
+.opencode/
+opencode.json
+AGENTS.md
+
+# =============================================================================
+# Python build artifacts
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# =============================================================================
+# Node / JavaScript (in case of future tooling)
+# =============================================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =============================================================================
+# IDE / editor files
+# =============================================================================
+# VS Code
+.vscode/
+!.vscode/settings.json.example
+!.vscode/extensions.json
+
+# JetBrains (IntelliJ, PyCharm, etc.)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Cursor
+.cursor/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim / Emacs
+*.swp
+*.swo
+*~
+.netrwhist
+\#*\#
+.\#*
+
+# =============================================================================
+# OS-generated files
+# =============================================================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini

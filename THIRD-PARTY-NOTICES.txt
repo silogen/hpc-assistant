@@ -1,0 +1,154 @@
+This software incorporates code or materials from third parties. AMD
+makes certain open-source software available via written request
+(HPC Assistant, hpc-assistant, latest) to Advanced Micro Devices,
+Inc., Attn: Software Legal Team, 7171 Southwest Pkwy, Austin, TX, 78735.
+AMD may charge you a reasonable fee for providing the source code.
+
+---
+
+aitta-proxy container — based on the official LiteLLM proxy image
+(ghcr.io/berriai/litellm; our Dockerfile only adds config.yaml on top of the
+published image — no Python packages are installed by us)
+
+LiteLLM
+Copyright (c) 2023 BerriAI
+License: MIT
+
+---
+
+build-db container — direct Python dependencies
+(Python Package Index; versions constrained in setup/requirements/build-db.txt)
+
+LangChain
+Copyright (c) LangChain, Inc.
+License: MIT
+
+LangChain Community
+Copyright (c) LangChain, Inc.
+License: MIT
+
+ChromaDB
+Copyright (c) Chroma Inc.
+License: Apache-2.0
+
+Unstructured
+Copyright (c) Unstructured Technologies, Inc.
+License: Apache-2.0
+
+Markdown (PyPI package name: Markdown; requirements entry: markdown)
+Copyright (c) 2004-2006 Yuri Selikhov (Yu_st), 2006-2024 Python Markdown Project
+License: BSD-3-Clause
+
+spaCy (installed when downloading the English model below)
+Copyright (c) Explosion AI GmbH
+License: MIT
+
+spaCy English model (en_core_web_sm)
+Copyright (c) Explosion AI GmbH
+License: MIT
+
+Note: The en_core_web_sm model metadata identifies additional upstream
+training or reference sources (for example WordNet 3.0 and OntoNotes 5)
+with separate terms. See the model metadata at
+https://github.com/explosion/spacy-models for details.
+
+---
+
+chroma-mcp container — direct dependencies
+
+uv
+Copyright (c) Astral Software Inc.
+License: Apache-2.0 OR MIT (dual-licensed; you may use either license)
+
+chroma-mcp
+Copyright (c) Chroma Inc.
+License: Apache-2.0
+
+---
+
+GEAK runtime (optional; not in hpc-assistant container images)
+Fetched on LUMI GPU compute nodes when GEAK is enabled, via geak/setup-geak.sh
+inside the site-provided lumi-multitorch Singularity image.
+
+GEAK
+Copyright (c) 2025 Kilian A. Lieret and Carlos E. Jimenez
+License: MIT
+https://github.com/AMD-AGI/GEAK
+
+fastmcp (PyPI; installed directly by setup-geak.sh)
+Copyright (c) Jeremiah Lowin
+License: Apache-2.0
+https://pypi.org/project/fastmcp/
+
+Note: setup-geak.sh also clones and installs Metrix from the AMD-authored
+intellikit repository (https://github.com/AMDResearch/intellikit, MIT) and
+editable installs of GEAK MCP tool packages from the GEAK repository.
+GEAK and those packages pull additional transitive Python dependencies at job
+runtime; those packages retain their original copyright and license terms as
+published on the Python Package Index or in the GEAK repository.
+
+The LUMI multitorch Singularity image (site-provided; not distributed by this
+repository) may include PyTorch, Triton, and other third-party components under
+their respective licenses.
+
+---
+
+Container base images
+
+Python (python:3.12-slim)
+Copyright (c) Python Software Foundation
+License: PSF-2.0
+
+LiteLLM proxy image (ghcr.io/berriai/litellm)
+Copyright (c) 2023 BerriAI
+License: MIT
+(itself built on an upstream Python base image; its bundled Python packages and
+Debian packages retain their respective upstream licenses)
+
+Debian packages included in the official Python slim images are subject to
+their respective licenses. Source code for Debian packages is available from
+https://www.debian.org/distrib/packages.
+
+---
+
+Development only (not distributed with end-user software)
+
+geak/opencode/plugins/package.json lists @opencode-ai/plugin for local
+TypeScript type-checking only. OpenCode loads geak-guards.ts directly; this
+package is not installed on HPC login or compute nodes.
+
+@opencode-ai/plugin (types only)
+https://opencode.ai/
+(See the OpenCode project for license terms.)
+
+---
+
+GitHub Actions (CI only — not distributed with end-user software)
+
+actions/checkout
+Copyright (c) GitHub, Inc.
+License: MIT
+
+docker/setup-buildx-action
+Copyright (c) 2013-2018 Docker, Inc.
+License: Apache-2.0
+
+---
+
+Transitive dependencies
+
+Each container image installs additional transitive Python packages at build
+time (for example LangChain Text Splitters, Starlette, Pydantic, NumPy, and
+others pulled by the packages above). Those packages retain their original
+copyright and license terms as published on the Python Package Index.
+
+GEAK jobs likewise install transitive Python packages at runtime inside the
+compute-node environment (see the GEAK runtime section above). Run
+`pip list --format=freeze` inside that environment for a full inventory.
+
+To obtain a complete list of installed packages and versions for a built
+image, run inside the container:
+
+    pip list --format=freeze
+
+or rebuild the image and inspect the build log / SBOM.

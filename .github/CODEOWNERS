@@ -1,0 +1,19 @@
+# Copyright Advanced Micro Devices, Inc.
+#
+# SPDX-License-Identifier: MIT
+#
+# Team slugs: https://github.com/orgs/silogen/teams
+# Syntax:     https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# Last matching rule wins. Prefer GitHub Teams over individuals.
+
+# Governance and compliance files — maintainer review required
+/.github/CODEOWNERS                    @silogen/hpc-assistant   @sopiko99   @albitoft-amd
+/.github/workflows/                    @silogen/hpc-assistant   @sopiko99   @albitoft-amd
+/SECURITY.md                           @silogen/hpc-assistant   @sopiko99   @albitoft-amd
+/LICENSE                               @silogen/hpc-assistant   @sopiko99   @albitoft-amd
+/LICENSE.TXT                           @silogen/hpc-assistant   @sopiko99   @albitoft-amd
+/THIRD-PARTY-NOTICES.txt               @silogen/hpc-assistant   @sopiko99   @albitoft-amd
+/README.md                             @silogen/hpc-assistant   @sopiko99   @albitoft-amd
+
+# Default — every file requires project-team or maintainer approval
+*                                      @silogen/hpc-assistant   @sopiko99   @albitoft-amd

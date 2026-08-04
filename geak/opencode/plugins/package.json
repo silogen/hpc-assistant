@@ -1,0 +1,9 @@
+{
+  "name": "geak-guards",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "@opencode-ai/plugin": "latest"
+  },
+  "_comment": "Dev-only. Used for local TypeScript type-checking only (bun install). NOT deployed to HPC — OpenCode loads the .ts file directly using its embedded Bun runtime; import type { Plugin } is erased at load time."
+}
