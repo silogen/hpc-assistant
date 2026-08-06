@@ -36,7 +36,7 @@ echo ""
 echo "Default settings for ${HPC_SITE}:"
 echo "  Knowledge base : LUMI AI Factory remote MCP (lumi-aif)"
 echo "  Inference      : Aitta"
-echo "    API base URL : https://api-staging-aitta.2.rahtiapp.fi/openai/v1"
+echo "    API base URL : https://aitta-api.csc.fi/openai/v1"
 echo "    Model        : openai/gpt-oss-120b"
 echo ""
 read -rp "Use these defaults? [Y/n]: " choice
@@ -62,7 +62,7 @@ fi
 
 if [[ "$USE_DEFAULTS" == "true" ]]; then
   INFERENCE_BACKEND="aitta"
-  AITTA_API_BASE="https://api-staging-aitta.2.rahtiapp.fi/openai/v1"
+  AITTA_API_BASE="https://aitta-api.csc.fi/openai/v1"
   TARGET_MODEL="openai/gpt-oss-120b"
   PROXY_PORT="8001"
   read_secret "Aitta API token: " AITTA_TOKEN

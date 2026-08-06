@@ -211,7 +211,7 @@ cp setup/templates/lumi-opencode-anthropic.json opencode.json
 ```
 
 The `lumi-opencode-aitta.json` template is pre-configured with:
-- Aitta provider pointing to `https://api-staging-aitta.2.rahtiapp.fi/openai/v1`
+- Aitta provider pointing to `https://aitta-api.csc.fi/openai/v1`
 - Model: `openai/gpt-oss-120b`
 - LUMI AI Factory MCP (`lumi-aif`) registered
 - HPC-safe permission rules
@@ -276,7 +276,7 @@ provider routes `/v1/messages` through the OpenAI Responses API — which Aitta
 doesn't implement — and also strips a leading `openai/` from the model name.)
 
 ```bash
-export AITTA_API_BASE=https://api-staging-aitta.2.rahtiapp.fi/openai/v1
+export AITTA_API_BASE=https://aitta-api.csc.fi/openai/v1
 export AITTA_TOKEN=your-token-here
 export LITELLM_MODEL=hosted_vllm/openai/gpt-oss-120b
 # Use `singularity` or `apptainer` depending on what is on your PATH (same subcommands).
