@@ -152,8 +152,8 @@ select_inference_backend() {
   case "$choice" in
     1)
       INFERENCE_BACKEND="aitta"
-      read -rp "Aitta API base URL [https://api-staging-aitta.2.rahtiapp.fi/openai/v1]: " INPUT
-      AITTA_API_BASE="${INPUT:-https://api-staging-aitta.2.rahtiapp.fi/openai/v1}"
+      read -rp "Aitta API base URL [https://aitta-api.csc.fi/openai/v1]: " INPUT
+      AITTA_API_BASE="${INPUT:-https://aitta-api.csc.fi/openai/v1}"
 
       read_secret "Aitta API token: " AITTA_TOKEN
 

@@ -74,6 +74,13 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 
 ## Quick Start
 
+First, clone the repository (all setup options below run from this checkout):
+
+```bash
+git clone https://github.com/silogen/hpc-assistant.git $HOME/hpc-assistant
+cd $HOME/hpc-assistant
+```
+
 There are three ways to set up the assistant:
 
 - [**LUMI module + init**](#option-a--lumi-environment-module) — `module load` + `hpc-assistant-init` (no full wizard)
@@ -85,12 +92,9 @@ There are three ways to set up the assistant:
 For LUMI (or any site that installs this repository under `/appl` or a shared path), use the included **Lmod** module and init script instead of running the full setup wizard. This installs skills and copies the LUMI OpenCode templates into your **project directory**; it does not prompt for credentials or start containers.
 
 ```bash
-# Adjust the modulefiles path for your site install
-module use /path/to/hpc-assistant/modulefiles
+# From the cloned repository (see Quick Start above), register its modulefiles
+module use $HOME/hpc-assistant/modulefiles
 module load hpc-assistant
-
-# Optional: LUMI AI Factory containerized OpenCode
-module load Local-LAIF lumi-aif-agents
 
 cd ~/projects/myapp
 
@@ -104,6 +108,11 @@ hpc-assistant-init --inference aitta
 export AITTA_TOKEN=your-token-here
 opencode
 ```
+
+> **Using Aitta:** the target model must be launched before you can use it. If it
+> isn't already running, the first request triggers Aitta to allocate compute and
+> load the model, which can take several minutes. See the
+> [Aitta docs](https://docs.lumi-supercomputer.eu/laif/inference/aitta/) for details.
 
 `hpc-assistant-init` uses the same logic as the setup wizard for skills and templates (`configure_opencode_project` in `setup/config.sh`). By default it writes `AGENTS.md`, `opencode.json`, and `.opencode/skills/` under the project directory. Existing `AGENTS.md` / `opencode.json` files are left unchanged unless you pass `--force`.
 
@@ -211,7 +220,7 @@ cp setup/templates/lumi-opencode-anthropic.json opencode.json
 ```
 
 The `lumi-opencode-aitta.json` template is pre-configured with:
-- Aitta provider pointing to `https://api-staging-aitta.2.rahtiapp.fi/openai/v1`
+- Aitta provider pointing to `https://aitta-api.csc.fi/openai/v1`
 - Model: `openai/gpt-oss-120b`
 - LUMI AI Factory MCP (`lumi-aif`) registered
 - HPC-safe permission rules
@@ -276,7 +285,7 @@ provider routes `/v1/messages` through the OpenAI Responses API — which Aitta
 doesn't implement — and also strips a leading `openai/` from the model name.)
 
 ```bash
-export AITTA_API_BASE=https://api-staging-aitta.2.rahtiapp.fi/openai/v1
+export AITTA_API_BASE=https://aitta-api.csc.fi/openai/v1
 export AITTA_TOKEN=your-token-here
 export LITELLM_MODEL=hosted_vllm/openai/gpt-oss-120b
 # Use `singularity` or `apptainer` depending on what is on your PATH (same subcommands).

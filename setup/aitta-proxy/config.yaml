@@ -15,7 +15,7 @@
 #
 #   AITTA_TOKEN     - Aitta API token (used to authenticate against Aitta).
 #   AITTA_API_BASE  - OpenAI-compatible base URL, e.g.
-#                     https://api-staging-aitta.2.rahtiapp.fi/openai/v1
+#                     https://aitta-api.csc.fi/openai/v1
 #   LITELLM_MODEL   - The target model with a `hosted_vllm/` routing prefix,
 #                     e.g. `hosted_vllm/openai/gpt-oss-120b`. LiteLLM strips the
 #                     `hosted_vllm/` prefix to pick the OpenAI-compatible

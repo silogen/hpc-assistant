@@ -5,7 +5,7 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "Aitta Inference Service",
       "options": {
-        "baseURL": "https://api-staging-aitta.2.rahtiapp.fi/openai/v1",
+        "baseURL": "https://aitta-api.csc.fi/openai/v1",
         "apiKey": "{env:AITTA_TOKEN}"
       },
       "models": {
