@@ -32,8 +32,8 @@ elif [[ "$KB_BACKEND" == "remote-mcp" ]]; then
   echo "  Knowledge base served by remote MCP (${REMOTE_MCP_NAME:-$SITE_REMOTE_MCP_NAME} -> ${REMOTE_MCP_URL:-$SITE_REMOTE_MCP_URL}); no local instance to start."
 fi
 
-if [[ "$INFERENCE_BACKEND" == "aitta" ]] && [[ "$AGENT_FRAMEWORK" != "opencode" ]] && [[ -n "${AITTA_PROXY_SIF:-}" ]] && [[ -f "$AITTA_PROXY_SIF" ]]; then
-  start_aitta_proxy
+if uses_litellm_proxy && [[ -n "${AITTA_PROXY_SIF:-}" ]] && [[ -f "$AITTA_PROXY_SIF" ]]; then
+  start_inference_proxy
 
   # Update config if proxy host changed (different login node)
   save_config
@@ -83,15 +83,16 @@ if [[ "$AGENT_FRAMEWORK" == "claude-code" ]]; then
 
   cd "$PROJECT_DIR"
   case "$INFERENCE_BACKEND" in
-    aitta)
-      # The LiteLLM proxy exposes the Aitta backend under the model name
-      # `aitta` (see setup/aitta-proxy/config.yaml). Point both the main and
-      # the background "small/fast" model at it so every request maps to a
-      # configured deployment.
+    aitta|custom-openai)
+      # The LiteLLM proxy exposes whichever OpenAI-compatible endpoint is
+      # configured under the single deployment name `aitta` (see
+      # setup/aitta-proxy/config.yaml). Point both the main and the background
+      # "small/fast" model at it so every request maps to that deployment.
+      resolve_openai_endpoint
       exec env \
         ANTHROPIC_BASE_URL="http://${PROXY_HOST}:${PROXY_PORT}" \
-        ANTHROPIC_API_KEY="${AITTA_TOKEN}" \
-        ANTHROPIC_AUTH_TOKEN="${AITTA_TOKEN}" \
+        ANTHROPIC_API_KEY="${ENDPOINT_API_KEY}" \
+        ANTHROPIC_AUTH_TOKEN="${ENDPOINT_API_KEY}" \
         ANTHROPIC_MODEL="aitta" \
         ANTHROPIC_SMALL_FAST_MODEL="aitta" \
         claude "${CLAUDE_ARGS[@]}"
@@ -125,6 +126,13 @@ elif [[ "$AGENT_FRAMEWORK" == "opencode" ]]; then
         OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true \
         opencode
       ;;
+    custom-openai)
+      # Base URL and model live in opencode.json; only the key is injected here.
+      exec env \
+        CUSTOM_API_KEY="${CUSTOM_API_KEY:-$PLACEHOLDER_API_KEY}" \
+        OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true \
+        opencode
+      ;;
     anthropic)
       exec env \
         ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
@@ -142,7 +150,7 @@ else
   elif is_instance_running "chroma-mcp"; then
     echo "  chroma-mcp: running (use '$CONTAINER_RT exec instance://chroma-mcp ...')"
   fi
-  if [[ "$INFERENCE_BACKEND" == "aitta" ]] && is_proxy_reachable "${PROXY_HOST:-localhost}" "${PROXY_PORT:-8001}"; then
+  if uses_litellm_proxy && is_proxy_reachable "${PROXY_HOST:-localhost}" "${PROXY_PORT:-8001}"; then
     echo "  aitta-proxy: http://${PROXY_HOST}:${PROXY_PORT} (Anthropic-compatible API)"
   fi
   echo ""

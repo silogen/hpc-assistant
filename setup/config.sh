@@ -31,6 +31,11 @@ DEFAULT_DOCS_DIR="$DEFAULT_DATA_DIR/docs"
 CONTAINER_CHROMA_MOUNT="/workspace/chroma_data"
 CONTAINER_DOCS_MOUNT="/workspace/docs"
 
+# Custom OpenAI-compatible endpoint (own or local LLM API).
+DEFAULT_CUSTOM_API_BASE="http://localhost:8000/v1"
+# OpenAI client libraries require a non-empty key even when the server ignores it.
+PLACEHOLDER_API_KEY="no-key-required"
+
 # ── Container runtime detection ───────────────────────────────────────────────
 detect_container_runtime() {
   if command -v apptainer &>/dev/null; then
@@ -148,7 +153,8 @@ select_inference_backend() {
   echo "Select inference backend:"
   echo "  1) Aitta inference service"
   echo "  2) Anthropic API (direct)"
-  read -rp "Choice [1-2]: " choice
+  echo "  3) Custom OpenAI-compatible endpoint (own/local LLM API)"
+  read -rp "Choice [1-3]: " choice
   case "$choice" in
     1)
       INFERENCE_BACKEND="aitta"
@@ -173,8 +179,71 @@ select_inference_backend() {
       read -rp "Model [claude-sonnet-4-6]: " INPUT
       ANTHROPIC_MODEL="${INPUT:-claude-sonnet-4-6}"
       ;;
+    3)
+      INFERENCE_BACKEND="custom-openai"
+      echo ""
+      echo "Any endpoint exposing the OpenAI /chat/completions API works here"
+      echo "(vLLM, llama.cpp, Ollama, TGI, LiteLLM, a site-hosted gateway, ...)."
+      echo "Include the API version path, e.g. http://localhost:8000/v1"
+      echo ""
+      read -rp "API base URL [$DEFAULT_CUSTOM_API_BASE]: " INPUT
+      CUSTOM_API_BASE="${INPUT:-$DEFAULT_CUSTOM_API_BASE}"
+
+      echo "  (Leave empty for a local server that does not check the key.)"
+      read_secret "API key: " CUSTOM_API_KEY
+      CUSTOM_API_KEY="${CUSTOM_API_KEY:-$PLACEHOLDER_API_KEY}"
+
+      # No default: the model id must match what the endpoint actually serves.
+      CUSTOM_MODEL=""
+      while [[ -z "$CUSTOM_MODEL" ]]; do
+        read -rp "Model id (as served by the endpoint): " CUSTOM_MODEL || {
+          echo "No model id provided." >&2
+          exit 1
+        }
+      done
+
+      read -rp "Proxy port [8001]: " INPUT
+      PROXY_PORT="${INPUT:-8001}"
+      ;;
     *) echo "Invalid choice." >&2; exit 1 ;;
   esac
+}
+
+# True when the LiteLLM proxy is required: an OpenAI-compatible backend behind an
+# agent that only speaks the Anthropic API (i.e. anything but OpenCode, which
+# talks to such endpoints directly).
+uses_litellm_proxy() {
+  case "${INFERENCE_BACKEND:-}" in
+    aitta|custom-openai) [[ "${AGENT_FRAMEWORK:-}" != "opencode" ]] ;;
+    *) return 1 ;;
+  esac
+}
+
+# Resolve the active OpenAI-compatible endpoint into backend-agnostic variables:
+# ENDPOINT_API_BASE, ENDPOINT_API_KEY, ENDPOINT_MODEL.
+resolve_openai_endpoint() {
+  case "${INFERENCE_BACKEND:-}" in
+    aitta)
+      ENDPOINT_API_BASE="${AITTA_API_BASE:-}"
+      ENDPOINT_API_KEY="${AITTA_TOKEN:-}"
+      ENDPOINT_MODEL="${TARGET_MODEL:-}"
+      ;;
+    custom-openai)
+      ENDPOINT_API_BASE="${CUSTOM_API_BASE:-}"
+      ENDPOINT_API_KEY="${CUSTOM_API_KEY:-$PLACEHOLDER_API_KEY}"
+      ENDPOINT_MODEL="${CUSTOM_MODEL:-}"
+      ;;
+    *)
+      echo "ERROR: ${INFERENCE_BACKEND:-<unset>} is not an OpenAI-compatible backend." >&2
+      return 1
+      ;;
+  esac
+
+  if [[ -z "$ENDPOINT_API_BASE" || -z "$ENDPOINT_MODEL" ]]; then
+    echo "ERROR: incomplete $INFERENCE_BACKEND configuration (base URL and model are required)." >&2
+    echo "       Re-run setup.sh, or fix $CONFIG_FILE / $CREDENTIALS_FILE." >&2
+    return 1
+  fi
 }
 
 select_agent_framework() {
@@ -215,6 +284,14 @@ save_credentials() {
         echo "ANTHROPIC_BASE_URL=$ANTHROPIC_BASE_URL"
         echo "ANTHROPIC_MODEL=$ANTHROPIC_MODEL"
         ;;
+      custom-openai)
+        # Base URL and model are written to config.env by save_config (they are
+        # not secrets, and hpc-assistant-init persists them without a key).
+        echo "CUSTOM_API_KEY=$CUSTOM_API_KEY"
+        if [[ "${AGENT_FRAMEWORK:-}" != "opencode" ]]; then
+          echo "PROXY_PORT=$PROXY_PORT"
+        fi
+        ;;
     esac
     if [[ "${GEAK_ENABLED:-false}" == "true" ]] && [[ -n "${GEAK_ANTHROPIC_API_KEY:-}" ]]; then
       echo "GEAK_ANTHROPIC_API_KEY=$GEAK_ANTHROPIC_API_KEY"
@@ -238,6 +315,10 @@ save_config() {
       echo "REMOTE_MCP_NAME=${SITE_REMOTE_MCP_NAME:-}"
       echo "REMOTE_MCP_URL=${SITE_REMOTE_MCP_URL:-}"
       echo "REMOTE_MCP_TOOL=${SITE_REMOTE_MCP_TOOL:-}"
+    fi
+    if [[ "$INFERENCE_BACKEND" == "custom-openai" ]]; then
+      echo "CUSTOM_API_BASE=${CUSTOM_API_BASE:-}"
+      echo "CUSTOM_MODEL=${CUSTOM_MODEL:-}"
     fi
     if [[ "$AGENT_FRAMEWORK" != "opencode" ]]; then
       echo "AITTA_PROXY_SIF=${AITTA_PROXY_SIF:-}"
@@ -292,7 +373,9 @@ render_system_prompt() {
 
 render_opencode_json() {
   local dest="$1"
-  if [[ "${USE_DEFAULTS:-false}" == "true" ]]; then
+  # A custom endpoint has no pre-baked site template by definition — its URL and
+  # model come from the user, so always render from the parameterized template.
+  if [[ "${USE_DEFAULTS:-false}" == "true" ]] && [[ "${INFERENCE_BACKEND:-aitta}" != "custom-openai" ]]; then
     case "${INFERENCE_BACKEND:-aitta}" in
       aitta)     cp "$SETUP_DIR/templates/lumi-opencode-aitta.json" "$dest" ;;
       anthropic) cp "$SETUP_DIR/templates/lumi-opencode-anthropic.json" "$dest" ;;
@@ -307,7 +390,7 @@ render_opencode_json() {
   local oc_mcp_block="{}"
   if [[ "${KB_BACKEND:-local-chroma}" == "remote-mcp" ]]; then
     oc_mcp_block="{ \"${SITE_REMOTE_MCP_NAME}\": { \"type\": \"remote\", \"url\": \"${SITE_REMOTE_MCP_URL}\", \"enabled\": true } }"
-  elif is_instance_running "chroma-mcp"; then
+  elif [[ -n "${CONTAINER_RT:-}" ]] && is_instance_running "chroma-mcp"; then
     oc_mcp_block="{ \"chroma\": { \"type\": \"local\", \"command\": [\"${CONTAINER_RT}\", \"exec\", \"instance://chroma-mcp\", \"uvx\", \"chroma-mcp\", \"--client-type\", \"persistent\", \"--data-dir\", \"${CONTAINER_CHROMA_MOUNT}\"], \"enabled\": true, \"timeout\": 40000 } }"
   fi
 
@@ -324,6 +407,14 @@ render_opencode_json() {
         -e "s|{{ANTHROPIC_MODEL}}|${ANTHROPIC_MODEL}|g" \
         -e "s|\"{{OC_MCP_BLOCK}}\"|${oc_mcp_block}|g" \
         "$SETUP_DIR/templates/opencode-anthropic.json" > "$dest"
+      ;;
+    custom-openai)
+      resolve_openai_endpoint || return 1
+      sed \
+        -e "s|{{CUSTOM_API_BASE}}|${ENDPOINT_API_BASE}|g" \
+        -e "s|{{CUSTOM_MODEL}}|${ENDPOINT_MODEL}|g" \
+        -e "s|\"{{OC_MCP_BLOCK}}\"|${oc_mcp_block}|g" \
+        "$SETUP_DIR/templates/opencode-custom.json" > "$dest"
       ;;
     *)
       echo "ERROR: Unknown inference backend: ${INFERENCE_BACKEND}" >&2
@@ -459,10 +550,16 @@ start_chroma_mcp() {
     "$CHROMA_MCP_SIF" chroma-mcp
 }
 
-start_aitta_proxy() {
+# Starts the LiteLLM proxy (aitta-proxy.sif) in front of the configured
+# OpenAI-compatible endpoint — Aitta or a user-supplied one. The container reads
+# AITTA_* variable names, so the resolved endpoint is passed under those names;
+# the image itself is generic and needs no rebuild for a custom endpoint.
+start_inference_proxy() {
   local host port
   host="$(hostname)"
   port="${PROXY_PORT:-8001}"
+
+  resolve_openai_endpoint || return 1
 
   if is_proxy_reachable "$host" "$port"; then
     echo "  aitta-proxy already reachable on ${host}:${port}."
@@ -475,21 +572,21 @@ start_aitta_proxy() {
     return 0
   fi
 
-  echo "  Starting aitta-proxy (LiteLLM) on ${host}:${port}..."
+  echo "  Starting aitta-proxy (LiteLLM -> ${ENDPOINT_API_BASE}) on ${host}:${port}..."
 
   if is_instance_running "aitta-proxy"; then
     $CONTAINER_RT instance stop aitta-proxy 2>/dev/null || true
   fi
 
   # LiteLLM routes by provider prefix. Use `hosted_vllm/` (not `openai/`) for
-  # the OpenAI-compatible Aitta backend, for two reasons:
+  # OpenAI-compatible backends, for two reasons:
   #   1. The `openai` provider routes Anthropic /v1/messages through the OpenAI
-  #      Responses API (/responses), which Aitta doesn't implement; hosted_vllm
-  #      goes straight to /chat/completions.
+  #      Responses API (/responses), which such backends rarely implement;
+  #      hosted_vllm goes straight to /chat/completions.
   #   2. The `openai` provider strips a leading `openai/` from the model name,
-  #      mangling Aitta ids like `openai/gpt-oss-120b` into `gpt-oss-120b`.
-  #      hosted_vllm forwards TARGET_MODEL (e.g. `openai/gpt-oss-120b`) verbatim.
-  local litellm_model="hosted_vllm/${TARGET_MODEL}"
+  #      mangling ids like `openai/gpt-oss-120b` into `gpt-oss-120b`.
+  #      hosted_vllm forwards the model id verbatim.
+  local litellm_model="hosted_vllm/${ENDPOINT_MODEL}"
 
   # Belt-and-suspenders: also force the chat-completions bridge in case someone
   # switches back to an `openai/`-prefixed model. Harmless for hosted_vllm.
@@ -497,15 +594,15 @@ start_aitta_proxy() {
   local force_chat="LITELLM_USE_CHAT_COMPLETIONS_URL_FOR_ANTHROPIC_MESSAGES=true"
 
   $CONTAINER_RT instance start \
-    --env "AITTA_API_BASE=$AITTA_API_BASE" \
-    --env "AITTA_TOKEN=$AITTA_TOKEN" \
+    --env "AITTA_API_BASE=$ENDPOINT_API_BASE" \
+    --env "AITTA_TOKEN=$ENDPOINT_API_KEY" \
     --env "LITELLM_MODEL=$litellm_model" \
     --env "$force_chat" \
     "$AITTA_PROXY_SIF" aitta-proxy
 
   nohup $CONTAINER_RT exec \
-    --env "AITTA_API_BASE=$AITTA_API_BASE" \
-    --env "AITTA_TOKEN=$AITTA_TOKEN" \
+    --env "AITTA_API_BASE=$ENDPOINT_API_BASE" \
+    --env "AITTA_TOKEN=$ENDPOINT_API_KEY" \
     --env "LITELLM_MODEL=$litellm_model" \
     --env "$force_chat" \
     instance://aitta-proxy \

@@ -18,10 +18,15 @@ Options:
   -d, --dir DIR           Project directory (default: $PWD)
   -f, --force             Overwrite existing AGENTS.md / opencode.json / CLAUDE.md
   --framework NAME        opencode (default) or claude-code
-  --inference NAME        anthropic (default) or aitta. Applies to both
-                          frameworks. claude-code + aitta needs the LiteLLM
-                          proxy SIF; see --sif-path.
-  --sif-path PATH         Path to aitta-proxy.sif (claude-code + aitta only).
+  --inference NAME        anthropic (default), aitta, or custom-openai. Applies
+                          to both frameworks. With claude-code, aitta and
+                          custom-openai need the LiteLLM proxy SIF; see
+                          --sif-path.
+  --api-base URL          Base URL of your OpenAI-compatible endpoint
+                          (custom-openai only), e.g. http://localhost:8000/v1
+  --model ID              Model id served by that endpoint (custom-openai only)
+  --sif-path PATH         Path to aitta-proxy.sif (claude-code + aitta or
+                          custom-openai only).
   --site NAME             HPC site (default: LUMI)
   --geak                  LUMI only: install GEAK skills + hooks/plugin + job
                           scripts (same as setup.sh when GEAK is enabled).
@@ -45,6 +50,12 @@ Examples:
   # LUMI + OpenCode + GEAK (multitorch in-job bootstrap):
   export GEAK_ANTHROPIC_API_KEY=sk-ant-...
   hpc-assistant-init --geak
+
+  # Your own OpenAI-compatible endpoint (vLLM, llama.cpp, Ollama, gateway, ...):
+  hpc-assistant-init --inference custom-openai \
+    --api-base http://localhost:8000/v1 --model meta-llama/Llama-3.3-70B-Instruct
+  export CUSTOM_API_KEY=...   # only if your endpoint checks it
+  opencode
 EOF
 }
 
@@ -54,6 +65,8 @@ FORCE_CONFIG_OVERWRITE=false
 AGENT_FRAMEWORK="opencode"
 INFERENCE_BACKEND="anthropic"
 AITTA_PROXY_SIF="${AITTA_PROXY_SIF:-}"
+CUSTOM_API_BASE="${CUSTOM_API_BASE:-}"
+CUSTOM_MODEL="${CUSTOM_MODEL:-}"
 HPC_SITE="LUMI"
 USE_DEFAULTS=true
 KB_BACKEND="remote-mcp"
@@ -76,6 +89,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --inference)
       INFERENCE_BACKEND="$2"
+      shift 2
+      ;;
+    --api-base)
+      CUSTOM_API_BASE="$2"
+      shift 2
+      ;;
+    --model)
+      CUSTOM_MODEL="$2"
       shift 2
       ;;
     --sif-path)
@@ -124,9 +145,27 @@ export AGENT_FRAMEWORK
 export HPC_SITE
 export AITTA_PROXY_SIF
 export GEAK_ENABLED
+export CUSTOM_API_BASE
+export CUSTOM_MODEL
 
 # shellcheck source=../setup/config.sh
 source "$SETUP_DIR/config.sh"
+
+case "$INFERENCE_BACKEND" in
+  anthropic|aitta) ;;
+  custom-openai)
+    if [[ -z "$CUSTOM_API_BASE" || -z "$CUSTOM_MODEL" ]]; then
+      echo "ERROR: --inference custom-openai requires --api-base and --model" >&2
+      echo "       (or the CUSTOM_API_BASE / CUSTOM_MODEL environment variables)." >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "ERROR: Unknown inference backend: $INFERENCE_BACKEND" >&2
+    echo "       Expected: anthropic, aitta, or custom-openai" >&2
+    exit 1
+    ;;
+esac
 
 get_site_config "$HPC_SITE"
 
@@ -142,10 +181,11 @@ if [[ "${GEAK_ENABLED:-false}" == "true" ]]; then
   SITE_SKILLS="$SITE_SKILLS $GEAK_SKILLS"
 fi
 
-# Claude Code + Aitta needs the LiteLLM proxy SIF. Default the path if the user
-# didn't pass --sif-path, and warn loudly that this combination requires the
-# proxy (started by launch.sh), unlike OpenCode which talks to Aitta directly.
-if [[ "$AGENT_FRAMEWORK" == "claude-code" ]] && [[ "$INFERENCE_BACKEND" == "aitta" ]]; then
+# Claude Code in front of an OpenAI-compatible endpoint needs the LiteLLM proxy
+# SIF. Default the path if the user didn't pass --sif-path, and warn loudly that
+# this combination requires the proxy (started by launch.sh), unlike OpenCode
+# which talks to such endpoints directly.
+if uses_litellm_proxy; then
   AITTA_PROXY_SIF="${AITTA_PROXY_SIF:-$DEFAULT_SIF_DIR/aitta-proxy.sif}"
   export AITTA_PROXY_SIF
 fi
@@ -157,7 +197,11 @@ echo "  Site           : $HPC_SITE"
 echo "  Framework      : $AGENT_FRAMEWORK"
 echo "  Knowledge base : $KB_BACKEND"
 echo "  Inference      : $INFERENCE_BACKEND"
-if [[ "$AGENT_FRAMEWORK" == "claude-code" ]] && [[ "$INFERENCE_BACKEND" == "aitta" ]]; then
+if [[ "$INFERENCE_BACKEND" == "custom-openai" ]]; then
+  echo "  Endpoint       : $CUSTOM_API_BASE"
+  echo "  Model          : $CUSTOM_MODEL"
+fi
+if uses_litellm_proxy; then
   echo "  Proxy SIF      : $AITTA_PROXY_SIF"
 fi
 if [[ "${GEAK_ENABLED:-false}" == "true" ]]; then
@@ -165,14 +209,14 @@ if [[ "${GEAK_ENABLED:-false}" == "true" ]]; then
 fi
 echo ""
 
-if [[ "$AGENT_FRAMEWORK" == "claude-code" ]] && [[ "$INFERENCE_BACKEND" == "aitta" ]]; then
-  echo "WARNING: Claude Code + Aitta requires the LiteLLM proxy (aitta-proxy.sif)."
-  echo "         OpenCode talks to Aitta directly, but Claude Code only speaks the"
-  echo "         Anthropic API, so requests must go through the proxy."
+if uses_litellm_proxy; then
+  echo "WARNING: Claude Code + $INFERENCE_BACKEND requires the LiteLLM proxy (aitta-proxy.sif)."
+  echo "         OpenCode talks to OpenAI-compatible endpoints directly, but Claude"
+  echo "         Code only speaks the Anthropic API, so requests must go through the proxy."
   if [[ ! -f "$AITTA_PROXY_SIF" ]]; then
     echo "         SIF not found at: $AITTA_PROXY_SIF"
     echo "         Build/pull it (see README) or pass --sif-path, then run:"
-    echo "             bash $SETUP_DIR/setup.sh     # save Aitta credentials"
+    echo "             bash $SETUP_DIR/setup.sh     # save endpoint credentials"
     echo "             bash $SETUP_DIR/launch.sh    # starts the proxy + Claude Code"
   fi
   echo ""
@@ -213,6 +257,9 @@ case "$AGENT_FRAMEWORK" in
     if [[ "$INFERENCE_BACKEND" == "aitta" ]]; then
       echo "  export AITTA_TOKEN=<your-token>"
       echo "  opencode    # or: bash $SETUP_DIR/launch.sh (after saving credentials via setup.sh)"
+    elif [[ "$INFERENCE_BACKEND" == "custom-openai" ]]; then
+      echo "  export CUSTOM_API_KEY=<your-key>   # skip if your endpoint ignores it"
+      echo "  opencode    # endpoint + model are baked into opencode.json"
     else
       echo "  export ANTHROPIC_API_KEY=<your-key>"
       echo "  opencode"
@@ -228,8 +275,8 @@ case "$AGENT_FRAMEWORK" in
     fi
     ;;
   claude-code)
-    if [[ "$INFERENCE_BACKEND" == "aitta" ]]; then
-      echo "  # Claude Code + Aitta runs through the LiteLLM proxy; launch.sh starts it."
+    if uses_litellm_proxy; then
+      echo "  # Claude Code + $INFERENCE_BACKEND runs through the LiteLLM proxy; launch.sh starts it."
       echo "  bash $SETUP_DIR/setup.sh     # one-time: pull aitta-proxy.sif + save credentials"
       echo "  bash $SETUP_DIR/launch.sh    # starts the proxy (hosted_vllm) + Claude Code"
     else

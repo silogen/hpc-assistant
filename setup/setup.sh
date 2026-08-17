@@ -138,7 +138,7 @@ if [[ "$USE_DEFAULTS" == "true" ]]; then
   CHROMA_DATA_DIR=""
   DOCS_DIR=""
 else
-  if [[ "$INFERENCE_BACKEND" == "aitta" ]] && [[ "$AGENT_FRAMEWORK" != "opencode" ]]; then
+  if uses_litellm_proxy; then
     read -rp "Path to aitta-proxy.sif [$DEFAULT_SIF_DIR/aitta-proxy.sif]: " INPUT
     AITTA_PROXY_SIF="${INPUT:-$DEFAULT_SIF_DIR/aitta-proxy.sif}"
   else
@@ -240,13 +240,13 @@ if [[ "$KB_BACKEND" == "local-chroma" ]]; then
   fi
 fi
 
-if [[ "$INFERENCE_BACKEND" == "aitta" ]] && [[ "$AGENT_FRAMEWORK" != "opencode" ]]; then
+if uses_litellm_proxy; then
   if [[ -f "$AITTA_PROXY_SIF" ]]; then
-    start_aitta_proxy
+    start_inference_proxy
   else
     echo "  WARNING: aitta-proxy.sif not found — skipping. Build it first (see README)."
   fi
-elif [[ "$INFERENCE_BACKEND" == "aitta" ]] && [[ "$AGENT_FRAMEWORK" == "opencode" ]]; then
+elif [[ "$INFERENCE_BACKEND" == "aitta" ]] || [[ "$INFERENCE_BACKEND" == "custom-openai" ]]; then
   echo "  OpenCode talks OpenAI API natively — aitta-proxy not needed."
 fi
 echo ""
@@ -306,9 +306,12 @@ else
   echo "                    chroma data: $CHROMA_DATA_DIR"
 fi
 echo "  Inference       : $INFERENCE_BACKEND"
+if [[ "$INFERENCE_BACKEND" == "custom-openai" ]]; then
+  echo "                    $CUSTOM_API_BASE ($CUSTOM_MODEL)"
+fi
 echo "  Agent framework : $AGENT_FRAMEWORK"
-if [[ "$INFERENCE_BACKEND" == "aitta" ]] && [[ "$AGENT_FRAMEWORK" != "opencode" ]]; then
-  echo "  Aitta proxy     : ${PROXY_HOST:-unknown}:${PROXY_PORT:-8001}"
+if uses_litellm_proxy; then
+  echo "  Inference proxy : ${PROXY_HOST:-unknown}:${PROXY_PORT:-8001}"
 fi
 if [[ "$GEAK_ENABLED" == "true" ]]; then
   echo "  GEAK            : enabled (see geak/GEAK.md)"

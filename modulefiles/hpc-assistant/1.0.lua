@@ -60,6 +60,8 @@ After loading, initialize a project directory:
   hpc-assistant-init
   export ANTHROPIC_API_KEY=<key>   # default inference backend
   # or: hpc-assistant-init --inference aitta && export AITTA_TOKEN=<token>
+  # or: hpc-assistant-init --inference custom-openai --api-base <url> --model <id>
+  #     export CUSTOM_API_KEY=<key>   # own OpenAI-compatible endpoint
 
 Optional: load the LUMI AI Factory agent environment for containerized OpenCode:
   module load Local-LAIF lumi-aif-agents

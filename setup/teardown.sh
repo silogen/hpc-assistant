@@ -149,7 +149,8 @@ fi
 echo "── Unsetting environment variables ──"
 unset ANTHROPIC_API_KEY ANTHROPIC_BASE_URL ANTHROPIC_MODEL ANTHROPIC_AUTH_TOKEN
 unset AITTA_API_BASE AITTA_TOKEN TARGET_MODEL
-echo "  Cleared ANTHROPIC_* and AITTA_* variables for this shell"
+unset CUSTOM_API_BASE CUSTOM_API_KEY CUSTOM_MODEL
+echo "  Cleared ANTHROPIC_*, AITTA_*, and CUSTOM_* variables for this shell"
 echo ""
 
 # ── Done ──────────────────────────────────────────────────────────────────────

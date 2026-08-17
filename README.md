@@ -10,7 +10,7 @@ The HPC Assistant brings safe, site-aware AI coding agents to HPC login nodes wh
   [LUMI AI Factory MCP](https://docs.lumi-supercomputer.eu/laif/software/agent-infrastructure/#mcp-server),
   the recommended default for LUMI) or a local ChromaDB built from cloned HPC docs and served via MCP
 - **Agent Skills** — site-specific and generic skills for resource management, Slurm job management, and GPU profiling
-- **Aitta Proxy** — [LiteLLM](https://docs.litellm.ai/) proxy (Anthropic-to-OpenAI translation) for using alternative inference backends (e.g. Aitta service on LUMI)
+- **Aitta Proxy** — [LiteLLM](https://docs.litellm.ai/) proxy (Anthropic-to-OpenAI translation) for using alternative inference backends (e.g. Aitta service on LUMI, or your own OpenAI-compatible endpoint)
 - **Agent-Agnostic** — skills are stored in a generic format; supports Claude Code and OpenCode, with the option to add other frameworks
 - **Login-Node Friendly** — no `pip install` required; all Python dependencies run inside Singularity (or Apptainer) containers
 
@@ -53,6 +53,8 @@ hpc-assistant/
 - One of:
   - Aitta API token (recommended for LUMI)
   - Anthropic API key
+  - Your own OpenAI-compatible endpoint (base URL, model id, and an API key if it
+    requires one) — see [Custom OpenAI-Compatible Endpoint](#custom-openai-compatible-endpoint)
 
 If using Claude Code as the agent framework:
 
@@ -107,6 +109,12 @@ opencode
 hpc-assistant-init --inference aitta
 export AITTA_TOKEN=your-token-here
 opencode
+
+# Or point it at your own OpenAI-compatible endpoint
+hpc-assistant-init --inference custom-openai \
+  --api-base http://localhost:8000/v1 --model meta-llama/Llama-3.3-70B-Instruct
+export CUSTOM_API_KEY=your-key-here   # skip if the endpoint ignores it
+opencode
 ```
 
 > **Using Aitta:** the target model must be launched before you can use it. If it
@@ -121,8 +129,10 @@ opencode
 | `-d DIR` | Project directory (default: current directory) |
 | `--force` | Overwrite existing agent config files |
 | `--framework opencode\|claude-code` | Agent framework (default: `opencode`) |
-| `--inference anthropic\|aitta` | Inference backend (default: `anthropic` for both frameworks) |
-| `--sif-path PATH` | Path to `aitta-proxy.sif` (claude-code + aitta only) |
+| `--inference anthropic\|aitta\|custom-openai` | Inference backend (default: `anthropic` for both frameworks) |
+| `--api-base URL` | Base URL of your OpenAI-compatible endpoint (`custom-openai` only) |
+| `--model ID` | Model id served by that endpoint (`custom-openai` only) |
+| `--sif-path PATH` | Path to `aitta-proxy.sif` (claude-code + aitta/custom-openai only) |
 | `--geak` | LUMI only: add GEAK skills + install hooks (Claude) or plugin (OpenCode) + `run-geak.sbatch` etc. |
 | `--no-save-config` | Skip writing `~/.config/hpc-assistant/config.env` |
 
@@ -183,10 +193,10 @@ The setup wizard will:
 1. Ask you to select your HPC site (LUMI)
 2. Use the site's **managed remote MCP** as the knowledge base automatically (LUMI ships one, so there's nothing to build or host and no question is asked)
 3. Offer to use **default LUMI settings** (Aitta + `openai/gpt-oss-120b`) — accept with Enter to skip the remaining configuration questions
-4. If not using defaults, choose the inference backend (Aitta or Anthropic API)
+4. If not using defaults, choose the inference backend (Aitta, Anthropic API, or your own OpenAI-compatible endpoint)
 5. Select the agent framework (Claude Code, OpenCode, or Generic)
 6. (LUMI only) Optionally enable **GEAK** kernel optimization (Claude Code or OpenCode; prompts for an Anthropic API key)
-7. Prompt for **SIF paths** when needed (`aitta-proxy.sif` for Claude Code + Aitta; `build-db` / `chroma-mcp` for local-ChromaDB)
+7. Prompt for **SIF paths** when needed (`aitta-proxy.sif` for Claude Code in front of an OpenAI-compatible endpoint; `build-db` / `chroma-mcp` for local-ChromaDB)
 8. (Local-ChromaDB only) Clone HPC documentation and build the knowledge base
 9. Start the relevant services as Singularity instances (skipped when not needed — e.g. OpenCode + Aitta uses no proxy)
 10. Install skills and configure MCP for the selected agent framework
@@ -226,6 +236,17 @@ The `lumi-opencode-aitta.json` template is pre-configured with:
 - HPC-safe permission rules
 
 If you need a different Aitta URL or model, edit `opencode.json` directly after copying.
+
+**Your own OpenAI-compatible endpoint:**
+
+```bash
+cp setup/templates/opencode-custom.json opencode.json
+```
+
+Then replace the `{{CUSTOM_API_BASE}}` and `{{CUSTOM_MODEL}}` placeholders with
+your endpoint and model, and `"{{OC_MCP_BLOCK}}"` with an MCP block (e.g. the
+`lumi-aif` block from `lumi-opencode-aitta.json`) or `{}` for no knowledge base.
+The API key is read from `CUSTOM_API_KEY` in the environment.
 
 **Claude Code:**
 
@@ -389,6 +410,48 @@ edit that file (and rebuild the SIF) if you want to change the baked-in default.
 ### Anthropic API
 
 Direct connection to Anthropic's API. Requires a valid API key and network access from the login node.
+
+### Custom OpenAI-Compatible Endpoint
+
+Select **`custom-openai`** to use any endpoint that serves the OpenAI
+`/chat/completions` API — a vLLM or llama.cpp server you started yourself
+(including one running in a SLURM job), Ollama, TGI, a site-hosted gateway, or a
+commercial OpenAI-compatible provider.
+
+You supply three things; nothing about the endpoint is baked into this repository
+or the container images:
+
+| Value | Where it is stored | Notes |
+| ----- | ------------------ | ----- |
+| Base URL (`CUSTOM_API_BASE`) | `config.env` | Include the version path, e.g. `http://localhost:8000/v1` |
+| Model id (`CUSTOM_MODEL`) | `config.env` | Must match what the endpoint serves — there is no default |
+| API key (`CUSTOM_API_KEY`) | `credentials.env` (mode 600) | Optional; a placeholder is stored for servers that don't check it |
+
+Set it up either way:
+
+```bash
+# Wizard: answer "n" to the defaults prompt, then pick option 3
+bash setup/setup.sh
+
+# Module path (no prompts):
+hpc-assistant-init --inference custom-openai \
+  --api-base http://localhost:8000/v1 --model my-model
+```
+
+**OpenCode** connects to the endpoint directly through the
+`@ai-sdk/openai-compatible` provider — no proxy and no container. The URL and
+model are written into `opencode.json`, and only the key is passed at launch, so
+change the URL or model by editing `opencode.json` (or re-running setup).
+
+**Claude Code** goes through the same LiteLLM proxy used for Aitta, because it
+only speaks the Anthropic API. This needs `aitta-proxy.sif`, and requests are
+routed with the `hosted_vllm/` provider prefix — correct for vLLM and most
+self-hosted OpenAI-compatible servers. The proxy reads your URL, key, and model
+from the environment at start, so the published image needs no rebuild.
+
+> **Login-node reachability:** the endpoint must be reachable from the login node.
+> A model served inside a SLURM job needs the compute node's hostname (and an
+> open port), not `localhost`.
 
 ## Skills
 
@@ -558,11 +621,11 @@ To customize permissions, edit the `permission` block in `opencode.json`. See th
 
 All configuration is stored in `~/.config/hpc-assistant/`:
 
-| File               | Contents                                                              |
-| ------------------ | --------------------------------------------------------------------- |
-| `config.env`       | Site, framework, KB backend, paths, proxy host/port                   |
-| `credentials.env`  | API keys and tokens (mode 600)                                        |
-| `logs/`            | Service logs (aitta-proxy, etc.)                                      |
+| File               | Contents                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| `config.env`       | Site, framework, KB backend, paths, proxy host/port, custom endpoint URL and model |
+| `credentials.env`  | API keys and tokens (mode 600)                                                     |
+| `logs/`            | Service logs (aitta-proxy, etc.)                                                   |
 
 ## Stopping Services
 
