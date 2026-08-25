@@ -9,8 +9,47 @@
         "apiKey": "{env:AITTA_TOKEN}"
       },
       "models": {
+        "LumiOpen/Llama-Poro-2-70B-Instruct": {
+          "name": "LumiOpen/Llama-Poro-2-70B-Instruct"
+        },
+        "LumiOpen/Poro-34B-chat": {
+          "name": "LumiOpen/Poro-34B-chat"
+        },
+        "Qwen/Qwen3-Coder-Next": {
+          "name": "Qwen/Qwen3-Coder-Next"
+        },
+        "Qwen/Qwen3.6-27B": {
+          "name": "Qwen/Qwen3.6-27B"
+        },
+        "Qwen/Qwen3.6-35B-A3B": {
+          "name": "Qwen/Qwen3.6-35B-A3B"
+        },
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0": {
+          "name": "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+        },
+        "Unbabel/Tower-Plus-9B": {
+          "name": "Unbabel/Tower-Plus-9B"
+        },
+        "allenai/OLMo-7B-0724-Instruct": {
+          "name": "allenai/OLMo-7B-0724-Instruct"
+        },
+        "google/gemma-4-31b-it": {
+          "name": "google/gemma-4-31b-it"
+        },
+        "meta-llama/Llama-3.3-70B-Instruct": {
+          "name": "meta-llama/Llama-3.3-70B-Instruct"
+        },
+        "mistralai/Ministral-3-14B-Reasoning-2512": {
+          "name": "mistralai/Ministral-3-14B-Reasoning-2512"
+        },
         "openai/gpt-oss-120b": {
           "name": "openai/gpt-oss-120b"
+        },
+        "swiss-ai/Apertus-70B-Instruct-2509": {
+          "name": "swiss-ai/Apertus-70B-Instruct-2509"
+        },
+        "swiss-ai/Apertus-8B-Instruct-2509": {
+          "name": "swiss-ai/Apertus-8B-Instruct-2509"
         }
       }
     }
@@ -68,5 +107,7 @@
       "enabled": true
     }
   },
-  "instructions": ["AGENTS.md"]
+  "instructions": [
+    "AGENTS.md"
+  ]
 }
