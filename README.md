@@ -2,7 +2,7 @@
 
 > Agent-agnostic HPC Assistant for AMD GPU systems — site-specific skills, a RAG knowledge base, and an inference proxy for HPC login nodes.
 
-The HPC Assistant brings safe, site-aware AI coding agents to HPC login nodes where direct LLM API access and `pip install` are typically unavailable. It ships site-specific skills (Slurm job management, resource and quota commands, AMD GPU profiling with `rocprofv3`), a RAG knowledge base built from HPC documentation and served over MCP, and an Anthropic-to-OpenAI inference proxy so users can route through alternative backends (e.g. Aitta on LUMI). Skills are stored in a generic markdown format that works with Claude Code, OpenCode, and other agent frameworks. Targets AMD Instinct GPU workloads on AMD-equipped HPC systems such as LUMI.
+The HPC Assistant brings safe, site-aware AI coding agents to HPC login nodes where direct LLM API access and `pip install` are typically unavailable. It ships site-specific skills (Slurm job management, resource and quota commands, AMD GPU profiling with `rocprofv3`, energy consumption profiling with Omnistat), a RAG knowledge base built from HPC documentation and served over MCP, and an Anthropic-to-OpenAI inference proxy so users can route through alternative backends (e.g. Aitta on LUMI). Skills are stored in a generic markdown format that works with Claude Code, OpenCode, and other agent frameworks. Targets AMD Instinct GPU workloads on AMD-equipped HPC systems such as LUMI.
 
 ## Features
 
@@ -18,7 +18,7 @@ The HPC Assistant brings safe, site-aware AI coding agents to HPC login nodes wh
 
 | Site | Skills                                                 | Knowledge base                                                                                                                                              | Documentation                                                          |
 | ---- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| LUMI | Profiling, Resource Management, Slurm Job Management   | Remote MCP ([LUMI AI Factory](https://docs.lumi-supercomputer.eu/laif/software/agent-infrastructure/#mcp-server), default) **or** local ChromaDB (optional) | [LUMI User Guide](https://github.com/Lumi-supercomputer/lumi-userguide)|
+| LUMI | Profiling, Resource Management, Slurm Job Management, Energy Consumption Profiling | Remote MCP ([LUMI AI Factory](https://docs.lumi-supercomputer.eu/laif/software/agent-infrastructure/#mcp-server), default) **or** local ChromaDB (optional) | [LUMI User Guide](https://github.com/Lumi-supercomputer/lumi-userguide)|
 
 ## Directory Structure
 
@@ -278,12 +278,14 @@ mkdir -p .opencode/skills
 cp -r skills/profiling .opencode/skills/
 cp -r skills/lumi-resource-management .opencode/skills/
 cp -r skills/lumi-slurm-job-management .opencode/skills/
+cp -r skills/energy-profiling .opencode/skills/
 
 # Claude Code
 mkdir -p .claude/skills
 cp -r skills/profiling .claude/skills/
 cp -r skills/lumi-resource-management .claude/skills/
 cp -r skills/lumi-slurm-job-management .claude/skills/
+cp -r skills/energy-profiling .claude/skills/
 ```
 
 #### 4. Set your API token and launch
@@ -460,6 +462,7 @@ Skills are stored in `skills/` in a generic markdown format compatible with mult
 | Skill                        | Scope                | Description                                                       |
 | ---------------------------- | -------------------- | ----------------------------------------------------------------- |
 | `profiling`                  | Generic              | AMD GPU profiling with rocprofv3 (tracing, counters, Perfetto)    |
+| `energy-profiling`           | Generic              | Energy consumption profiling with Omnistat                        |
 | `lumi-resource-management`   | LUMI                 | Project quotas, billing units, storage allocations                |
 | `lumi-slurm-job-management`  | LUMI                 | Slurm job submission, partitions, containers, Python/PyTorch jobs |
 | `optimize-kernel`            | LUMI (GEAK, opt-in)  | Submit a Triton/HIP kernel for GEAK optimization via SLURM        |

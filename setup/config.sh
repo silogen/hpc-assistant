@@ -70,7 +70,7 @@ get_site_config() {
       SITE_DOCS_GLOB="**/*.md"
       SITE_DOCS_FILE_TYPE="markdown"
       SITE_COLLECTION="LUMI_documentation"
-      SITE_SKILLS="profiling lumi-resource-management lumi-slurm-job-management"
+      SITE_SKILLS="profiling energy-profiling lumi-resource-management lumi-slurm-job-management"
       # LUMI AI Factory provides a public, regularly-updated MCP server
       # over the LUMI Docs and LUMI AI Guide knowledge base.
       # https://docs.lumi-supercomputer.eu/laif/software/agent-infrastructure/#mcp-server
