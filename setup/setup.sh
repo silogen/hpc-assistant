@@ -77,49 +77,13 @@ fi
 select_agent_framework
 echo ""
 
-# ── 4b. Optional: GEAK kernel optimization (LUMI only) ───────────────────────
+# ── 7. Optional skills ───────────────────────────────────────────────────────
+# Asked even when using site defaults so GEAK and similar extras stay opt-in.
 
-GEAK_ENABLED=false
-GEAK_ANTHROPIC_API_KEY=""
+load_saved_optional_skills
+select_optional_skills
 
-if [[ "$HPC_SITE" == "LUMI" ]]; then
-  echo "── GEAK kernel optimization (optional) ──"
-  echo "GEAK is an automated GPU-kernel optimization workflow that submits SLURM"
-  echo "jobs running the GEAK CLI inside a Singularity container."
-  echo "Supported frameworks: Claude Code, OpenCode."
-  echo ""
-  read -rp "Install GEAK kernel optimization? [y/N]: " GEAK_CHOICE
-  case "${GEAK_CHOICE:-n}" in
-    y|Y|yes|YES)
-      if [[ "$AGENT_FRAMEWORK" != "claude-code" && "$AGENT_FRAMEWORK" != "opencode" ]]; then
-        echo "  GEAK requires Claude Code or OpenCode -- skipping (selected framework: $AGENT_FRAMEWORK)."
-      else
-        GEAK_ENABLED=true
-        echo ""
-        if ! prompt_geak_third_party_download_notice "$PROJECT_DIR"; then
-          echo "  GEAK installation cancelled (third-party download notice not accepted)."
-          GEAK_ENABLED=false
-        else
-          echo "GEAK calls the Anthropic API directly from inside the SLURM container."
-          echo "An Anthropic API key is required even if your agent uses Aitta as its backend."
-          read_secret "Anthropic API key for GEAK: " GEAK_ANTHROPIC_API_KEY
-          if [[ -z "$GEAK_ANTHROPIC_API_KEY" ]]; then
-            echo "  No key provided -- disabling GEAK installation." >&2
-            GEAK_ENABLED=false
-          else
-            # Append GEAK skills so the skill loop installs them for either framework.
-            SITE_SKILLS="$SITE_SKILLS $GEAK_SKILLS"
-          fi
-        fi
-      fi
-      ;;
-    *)
-      ;;
-  esac
-  echo ""
-fi
-
-# ── 7. Paths ─────────────────────────────────────────────────────────────────
+# ── 8. Paths ─────────────────────────────────────────────────────────────────
 
 echo "── Container images (SIF files) ──"
 echo "Build instructions are in the README. Provide paths to pre-built SIF files."
@@ -169,7 +133,7 @@ else
 fi
 echo ""
 
-# ── 8. Build knowledge base ──────────────────────────────────────────────────
+# ── 9. Build knowledge base ──────────────────────────────────────────────────
 
 echo "── Knowledge base setup ──"
 
@@ -227,7 +191,7 @@ else
 fi
 echo ""
 
-# ── 9. Start services ────────────────────────────────────────────────────────
+# ── 10. Start services ───────────────────────────────────────────────────────
 
 echo "── Starting services ──"
 mkdir -p "$LOG_DIR"
@@ -251,7 +215,7 @@ elif [[ "$INFERENCE_BACKEND" == "aitta" ]] || [[ "$INFERENCE_BACKEND" == "custom
 fi
 echo ""
 
-# ── 10. Configure agent framework ────────────────────────────────────────────
+# ── 11. Configure agent framework ────────────────────────────────────────────
 
 echo "── Configuring agent framework ──"
 
@@ -262,20 +226,9 @@ if [[ "$AGENT_FRAMEWORK" == "claude-code" ]]; then
   echo "Setting up Claude Code skills and MCP..."
   configure_claude_code_project "$PROJECT_DIR"
 
-  if [[ "$GEAK_ENABLED" == "true" ]]; then
-    install_geak_into_project "$PROJECT_DIR"
-  else
-    # .claude/settings.json is committed in the repo — nothing to generate.
-    echo "  .claude/settings.json already present (committed)"
-  fi
-
 elif [[ "$AGENT_FRAMEWORK" == "opencode" ]]; then
   echo "Setting up OpenCode skills, rules, and MCP..."
   configure_opencode_project "$PROJECT_DIR"
-
-  if [[ "$GEAK_ENABLED" == "true" ]]; then
-    install_geak_into_project "$PROJECT_DIR"
-  fi
 
 else
   echo "Generic agent framework selected."
@@ -284,7 +237,7 @@ else
 fi
 echo ""
 
-# ── 11. Save configuration ───────────────────────────────────────────────────
+# ── 12. Save configuration ───────────────────────────────────────────────────
 
 save_credentials
 save_config
@@ -310,11 +263,14 @@ if [[ "$INFERENCE_BACKEND" == "custom-openai" ]]; then
   echo "                    $CUSTOM_API_BASE ($CUSTOM_MODEL)"
 fi
 echo "  Agent framework : $AGENT_FRAMEWORK"
+echo "  Skills          : $SITE_SKILLS"
+if [[ -n "${ENABLED_OPTIONAL_SKILLS:-}" ]]; then
+  echo "  Optional skills : $ENABLED_OPTIONAL_SKILLS"
+else
+  echo "  Optional skills : (none — re-run setup or hpc-assistant-init --with-skill NAME)"
+fi
 if uses_litellm_proxy; then
   echo "  Inference proxy : ${PROXY_HOST:-unknown}:${PROXY_PORT:-8001}"
-fi
-if [[ "$GEAK_ENABLED" == "true" ]]; then
-  echo "  GEAK            : enabled (see geak/GEAK.md)"
 fi
 echo ""
 echo "To launch the assistant:"

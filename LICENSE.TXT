@@ -13,12 +13,14 @@ This repository incorporates third-party open-source software components. The
 open-source licenses present across these components are:
 
   - MIT
+  - MIT-0
   - Apache-2.0
   - BSD-3-Clause
   - PSF-2.0 (Python)
 
 Per-component copyright notices and license terms are listed in
-THIRD-PARTY-NOTICES.txt. Container images published from this repository include
+THIRD-PARTY-NOTICES.txt. Container images published from this repository, and
+the local-mode virtualenv created by hpc-assistant-local-setup, include
 additional dynamically installed dependencies; see THIRD-PARTY-NOTICES.txt for
 the authoritative list.
 

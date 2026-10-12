@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling==1.32.4"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hpc-mcp"
+version = "0.1.0"
+description = "MCP bridge exposing HPC cluster operations as bounded tools over the user's own SSH connection"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Advanced Micro Devices, Inc." }]
+keywords = ["mcp", "hpc", "slurm", "lumi", "rocm"]
+dependencies = ["mcp==2.0.0"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1"]
+
+[project.scripts]
+hpc-mcp = "hpc_mcp.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hpc_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

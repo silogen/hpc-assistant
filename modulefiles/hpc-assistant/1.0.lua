@@ -52,8 +52,7 @@ This module sets:
   HPC_ASSISTANT_ROOT                           Install root (skills, setup templates, init script)
   PATH                                         Adds bin/ (hpc-assistant-init)
   OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS   true (same as setup/launch.sh for OpenCode;
-                                                enables non-blocking background subagents, e.g.
-                                                geak-monitor; requires OpenCode >= 1.14.51)
+                                                enables non-blocking background subagents; requires OpenCode >= 1.14.51)
 
 After loading, initialize a project directory:
   cd /path/to/your/project
@@ -62,6 +61,8 @@ After loading, initialize a project directory:
   # or: hpc-assistant-init --inference aitta && export AITTA_TOKEN=<token>
   # or: hpc-assistant-init --inference custom-openai --api-base <url> --model <id>
   #     export CUSTOM_API_KEY=<key>   # own OpenAI-compatible endpoint
+  # Optional GEAK kernel-optimizer skill (not installed by default):
+  #   hpc-assistant-init --with-skill geak-optimization
 
 Optional: load the LUMI AI Factory agent environment for containerized OpenCode:
   module load Local-LAIF lumi-aif-agents
@@ -78,7 +79,7 @@ More information:
 setenv("HPC_ASSISTANT_ROOT", repo_root)
 prepend_path("PATH", pathJoin(repo_root, "bin"))
 
--- Match setup/launch.sh when starting OpenCode: background subagents (GEAK monitor, etc.).
+-- Match setup/launch.sh when starting OpenCode: background subagents.
 -- On OpenCode < 1.14.51 the flag is ignored; see launch.sh comments.
 setenv("OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS", "true")
 

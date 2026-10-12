@@ -71,6 +71,11 @@ geak-output/
 opencode.json
 AGENTS.md
 
+# Local mode — rendered into a project directory by hpc-assistant-init --local
+/.hpc-assistant.json
+/.hpc-assistant/
+/.mcp.json
+
 # =============================================================================
 # Python build artifacts
 # =============================================================================

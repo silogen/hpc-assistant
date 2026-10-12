@@ -1,0 +1,90 @@
+{
+  "_comment": "HPC Assistant local-mode configuration. Rendered into a project directory by `hpc-assistant-init --local`. This file is the policy boundary: every remote path the assistant touches is validated against remote.project_root, and every bound it honours is declared under limits. Edit it by hand as your project needs change. It holds no credentials — authentication is your ssh-agent and your ~/.ssh/config.",
+  "_comment_tool_approval": "This file cannot prompt you. Per-call approval of hpc-mcp tools is the agent harness: OpenCode's local-mode overlay sets permission.hpc_* to ask in opencode.json; Claude Code gets permissions.ask mcp__hpc__* in .claude/settings.json. The overlay also denies edits of this file, opencode.json, AGENTS.md, and CLAUDE.md.",
+
+  "version": 1,
+  "site": "{{HPC_SITE}}",
+  "mode": "local",
+
+  "remote": {
+    "_comment": "host must be an alias defined in ~/.ssh/config, not a user@hostname. That is what keeps ProxyJump, MFA, certificates and ControlMaster under your control instead of the assistant's, and it is why no credential ever becomes a tool argument. project_root must be a concrete path: shell variables such as $USER and ~ are not expanded.",
+    "host": "{{REMOTE_HOST}}",
+    "project_root": "{{REMOTE_ROOT}}",
+    "account": "{{SLURM_ACCOUNT}}",
+
+    "_comment_readable_paths": "Directories outside project_root the assistant may READ. Sites keep shared software outside any one project, and without this the assistant cannot use it: a job that runs `singularity exec` on a site image needs that image's directory listed here. Reads only — writes stay inside project_root, so this does not widen what the assistant can damage. Both LUMI container collections are listed: /appl/local/containers holds the general images (PyTorch, JAX), and /appl/local/laifs/containers holds the LUMI AI Factory multitorch stack that the slurm skill's examples reference.",
+    "readable_paths": ["/appl/local/containers", "/appl/local/laifs/containers"]
+  },
+
+  "slurm": {
+    "_comment": "default_partition has no built-in value: names like small-g are local to one cluster. extra_directives are rendered as additional #SBATCH lines (for example --gres=gpu:a100:1, --mem=32G, --cpus-per-task=8, --qos=debug). Sites that do not use --gpus-per-node should set default_gpus_per_node to 0 and put GPU syntax here.",
+    "default_partition": "{{DEFAULT_PARTITION}}",
+    "default_time": "00:30:00",
+    "default_nodes": 1,
+    "default_gpus_per_node": 1,
+    "extra_directives": []
+  },
+
+  "_comment_login_commands": "Site-specific CLI tools allowed on the login node in addition to the generic Unix and Slurm set. Replace these when you are not on LUMI.",
+  "login_commands": ["lumi-allocations", "lumi-quota", "lumi-workspaces"],
+  "_comment_env_probes": "Environment variables site_info reports after the preamble. CUDA sites should list CUDA_HOME instead of, or as well as, ROCM_PATH.",
+  "env_probes": ["ROCM_PATH"],
+
+  "preamble": {
+    "_comment": "A non-interactive SSH session has no `module` command in PATH and no shell profile applied, so the environment must be declared rather than remembered. These entries are rendered into every dispatched command, in this order: modules, then env, then commands. Declare only what the project needs: `module load` is the slowest line here, measured at 1 to 2.5 seconds per command on LUMI, and it is paid every time.",
+    "modules": [],
+    "env": {},
+    "commands": [],
+
+    "_comment_apply_to_scheduler": "Scheduler clients (squeue, sinfo, sacct, sbatch) live in the default PATH at every site we know of, so the preamble is skipped for them — which is most of an assistant's remote calls. Set this to true only if `squeue` on your cluster needs a module first.",
+    "apply_to_scheduler": false
+  },
+
+  "file_access": {
+    "_comment": "How files are shared between the laptop and the cluster. Only `rsync` is supported: nothing here moves files by itself, so sync-to-remote.sh does it. See LOCAL-MODE.md.",
+    "mode": "{{FILE_ACCESS_MODE}}",
+    "local_root": "{{LOCAL_ROOT}}",
+
+    "rsync": {
+      "_comment": "Applied by sync-to-remote.sh, which is what actually moves files: nothing in hpc-mcp runs rsync, so this list is documentation unless the script reads it. Keep the two in step. Never uses --delete, and a dry run is shown before any transfer.",
+      "excludes": [
+        ".git/",
+        ".hpc-assistant/",
+        ".venv/",
+        "__pycache__/",
+        "*.py[cod]",
+        "build/",
+        "*.o",
+        "*.so",
+        "*.sif",
+        "slurm-*.out",
+        "slurm-*.err",
+        ".opencode/",
+        ".claude/",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "opencode.json",
+        ".mcp.json",
+        ".hpc-assistant.json",
+        "sync-to-remote.sh"
+      ]
+    }
+  },
+
+  "limits": {
+    "_comment": "Bounds the permission model of an agent harness cannot express.",
+    "max_read_bytes": 262144,
+    "max_output_bytes": 65536,
+    "max_list_entries": 500,
+    "max_find_depth": 3,
+    "max_fetch_bytes": 10485760,
+    "scheduler_min_interval_seconds": 10,
+    "await_job_initial_interval_seconds": 10,
+    "await_job_max_interval_seconds": 120,
+    "command_timeout_seconds": 120
+  },
+
+  "audit": {
+    "log": ".hpc-assistant/audit.log"
+  }
+}

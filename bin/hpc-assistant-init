@@ -28,12 +28,29 @@ Options:
   --sif-path PATH         Path to aitta-proxy.sif (claude-code + aitta or
                           custom-openai only).
   --site NAME             HPC site (default: LUMI)
-  --geak                  LUMI only: install GEAK skills + hooks/plugin + job
-                          scripts (same as setup.sh when GEAK is enabled).
-                          SLURM jobs use the LUMI multitorch image and bootstrap
-                          GEAK in-job via setup-geak.sh (see geak/GEAK.md).
+  --with-skill NAME       Opt in to an optional skill (repeatable). Currently:
+                          geak-optimization
+  --no-optional-skills    Do not install optional skills (overrides a saved list)
   --no-save-config        Do not write ~/.config/hpc-assistant/config.env
   -h, --help              Show this help
+
+Local mode (agent runs on your own machine, cluster reached over SSH):
+  --local                 Configure this project for local mode: writes
+                          .hpc-assistant.json, appends a local-mode section to
+                          the system prompt, requires approval for hpc-mcp tools
+                          and raw ssh/scp/rsync, and denies local paths outside
+                          the project. See LOCAL-MODE.md.
+  --remote-host ALIAS     SSH host alias for the cluster, as defined in
+                          ~/.ssh/config (default: lumi). Must be an alias, not a
+                          user@hostname — that is what keeps credentials out of
+                          the assistant entirely.
+  --remote-root PATH      Project directory on the cluster, e.g.
+                          /scratch/project_465000000/$USER/myapp. Everything the
+                          assistant does remotely is bounded to this path.
+  --account NAME          Slurm account to bill jobs to, e.g. project_465000000
+  --file-access MODE      How files are shared with the cluster. Only rsync is
+                          supported; see LOCAL-MODE.md.
+  --partition NAME        Default Slurm partition (default: small-g)
 
 Examples:
   module load hpc-assistant
@@ -47,15 +64,21 @@ Examples:
   hpc-assistant-init --framework claude-code --inference aitta \
     --sif-path ~/.local/share/hpc-assistant/sif/aitta-proxy.sif
 
-  # LUMI + OpenCode + GEAK (multitorch in-job bootstrap):
-  export GEAK_ANTHROPIC_API_KEY=sk-ant-...
-  hpc-assistant-init --geak
-
   # Your own OpenAI-compatible endpoint (vLLM, llama.cpp, Ollama, gateway, ...):
   hpc-assistant-init --inference custom-openai \
     --api-base http://localhost:8000/v1 --model meta-llama/Llama-3.3-70B-Instruct
   export CUSTOM_API_KEY=...   # only if your endpoint checks it
   opencode
+
+  # Local mode: agent on your laptop, LUMI reached over your own SSH connection.
+  # Run this in a local clone of your project, not on the cluster:
+  hpc-assistant-init --local \
+    --remote-host lumi \
+    --remote-root /scratch/project_465000000/$USER/myapp \
+    --account project_465000000
+  export AITTA_TOKEN=... && opencode
+  # Opt in to the GEAK kernel-optimizer skill (not installed by default):
+  hpc-assistant-init --with-skill geak-optimization
 EOF
 }
 
@@ -71,7 +94,15 @@ HPC_SITE="LUMI"
 USE_DEFAULTS=true
 KB_BACKEND="remote-mcp"
 SAVE_CONFIG=true
-GEAK_ENABLED=false
+LOCAL_MODE=false
+REMOTE_HOST="${REMOTE_HOST:-}"
+REMOTE_ROOT="${REMOTE_ROOT:-}"
+SLURM_ACCOUNT="${SLURM_ACCOUNT:-}"
+FILE_ACCESS_MODE="${FILE_ACCESS_MODE:-}"
+SSHFS_MOUNTPOINT="${SSHFS_MOUNTPOINT:-}"
+DEFAULT_PARTITION="${DEFAULT_PARTITION:-}"
+CLEAR_OPTIONAL_SKILLS=false
+WITH_OPTIONAL_SKILLS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -107,8 +138,44 @@ while [[ $# -gt 0 ]]; do
       HPC_SITE="$2"
       shift 2
       ;;
-    --geak)
-      GEAK_ENABLED=true
+    --local)
+      LOCAL_MODE=true
+      shift
+      ;;
+    --remote-host)
+      REMOTE_HOST="$2"
+      shift 2
+      ;;
+    --remote-root)
+      REMOTE_ROOT="$2"
+      shift 2
+      ;;
+    --account)
+      SLURM_ACCOUNT="$2"
+      shift 2
+      ;;
+    --file-access)
+      FILE_ACCESS_MODE="$2"
+      shift 2
+      ;;
+    --sshfs-mountpoint)
+      SSHFS_MOUNTPOINT="$2"
+      shift 2
+      ;;
+    --partition)
+      DEFAULT_PARTITION="$2"
+      shift 2
+      ;;
+    --with-skill)
+      if [[ -z "${2:-}" || "$2" == -* ]]; then
+        echo "ERROR: --with-skill requires a skill name" >&2
+        exit 1
+      fi
+      WITH_OPTIONAL_SKILLS+=("$2")
+      shift 2
+      ;;
+    --no-optional-skills)
+      CLEAR_OPTIONAL_SKILLS=true
       shift
       ;;
     --no-save-config)
@@ -144,9 +211,16 @@ export INFERENCE_BACKEND
 export AGENT_FRAMEWORK
 export HPC_SITE
 export AITTA_PROXY_SIF
-export GEAK_ENABLED
 export CUSTOM_API_BASE
 export CUSTOM_MODEL
+export LOCAL_MODE
+export LOCAL_ROOT="$PROJECT_TARGET"
+export REMOTE_HOST
+export REMOTE_ROOT
+export SLURM_ACCOUNT
+export FILE_ACCESS_MODE
+export SSHFS_MOUNTPOINT
+export DEFAULT_PARTITION
 
 # shellcheck source=../setup/config.sh
 source "$SETUP_DIR/config.sh"
@@ -169,17 +243,42 @@ esac
 
 get_site_config "$HPC_SITE"
 
-if [[ "${GEAK_ENABLED:-false}" == "true" ]]; then
-  if [[ "$HPC_SITE" != "LUMI" ]]; then
-    echo "ERROR: --geak is only supported for site LUMI (got: $HPC_SITE)" >&2
+if [[ "$LOCAL_MODE" == "true" ]]; then
+  local_mode_defaults
+  validate_file_access_mode "$FILE_ACCESS_MODE" || exit 1
+
+  if [[ -z "$REMOTE_ROOT" ]]; then
+    echo "ERROR: --local requires --remote-root: the project directory on the cluster." >&2
+    echo "       Everything the assistant does remotely is bounded to that path, so" >&2
+    echo "       there is no safe default. For example:" >&2
+    echo "         --remote-root /scratch/project_465000000/\$USER/myapp" >&2
     exit 1
   fi
-  if [[ "$AGENT_FRAMEWORK" != "claude-code" && "$AGENT_FRAMEWORK" != "opencode" ]]; then
-    echo "ERROR: --geak requires --framework opencode or claude-code" >&2
-    exit 1
+  case "$REMOTE_HOST" in
+    *@*)
+      echo "ERROR: --remote-host must be an SSH host alias, not user@hostname." >&2
+      echo "       Define a Host block in ~/.ssh/config and pass its name, so that" >&2
+      echo "       authentication stays with your ssh-agent. See LOCAL-MODE.md." >&2
+      exit 1
+      ;;
+  esac
+  if [[ -z "$SLURM_ACCOUNT" ]]; then
+    echo "WARNING: no --account given; job submission will need one. Add it to" >&2
+    echo "         .hpc-assistant.json under remote.account before submitting." >&2
+    echo "" >&2
   fi
-  SITE_SKILLS="$SITE_SKILLS $GEAK_SKILLS"
 fi
+
+ENABLED_OPTIONAL_SKILLS=""
+if [[ "$CLEAR_OPTIONAL_SKILLS" != "true" ]]; then
+  load_saved_optional_skills
+fi
+if [[ ${#WITH_OPTIONAL_SKILLS[@]} -gt 0 ]]; then
+  for skill in "${WITH_OPTIONAL_SKILLS[@]}"; do
+    enable_optional_skill "$skill"
+  done
+fi
+export ENABLED_OPTIONAL_SKILLS
 
 # Claude Code in front of an OpenAI-compatible endpoint needs the LiteLLM proxy
 # SIF. Default the path if the user didn't pass --sif-path, and warn loudly that
@@ -194,18 +293,26 @@ echo "HPC Assistant — project init"
 echo "  Install root : $HPC_ASSISTANT_ROOT"
 echo "  Project dir    : $PROJECT_TARGET"
 echo "  Site           : $HPC_SITE"
+echo "  Placement      : $([[ "$LOCAL_MODE" == "true" ]] && echo "local (cluster over SSH)" || echo "on-cluster")"
+if [[ "$LOCAL_MODE" == "true" ]]; then
+  echo "  Remote host    : $REMOTE_HOST"
+  echo "  Remote root    : $REMOTE_ROOT"
+  echo "  Slurm account  : ${SLURM_ACCOUNT:-<unset>}"
+  echo "  File access    : $FILE_ACCESS_MODE"
+  if [[ "$FILE_ACCESS_MODE" == "sshfs" ]]; then
+    echo "  Mountpoint     : $SSHFS_MOUNTPOINT"
+  fi
+fi
 echo "  Framework      : $AGENT_FRAMEWORK"
 echo "  Knowledge base : $KB_BACKEND"
 echo "  Inference      : $INFERENCE_BACKEND"
+echo "  Optional skills: ${ENABLED_OPTIONAL_SKILLS:-none}"
 if [[ "$INFERENCE_BACKEND" == "custom-openai" ]]; then
   echo "  Endpoint       : $CUSTOM_API_BASE"
   echo "  Model          : $CUSTOM_MODEL"
 fi
 if uses_litellm_proxy; then
   echo "  Proxy SIF      : $AITTA_PROXY_SIF"
-fi
-if [[ "${GEAK_ENABLED:-false}" == "true" ]]; then
-  echo "  GEAK           : enabled (lumi-multitorch + setup-geak.sh)"
 fi
 echo ""
 
@@ -235,12 +342,8 @@ case "$AGENT_FRAMEWORK" in
     ;;
 esac
 
-if [[ "${GEAK_ENABLED:-false}" == "true" ]]; then
-  if ! prompt_geak_third_party_download_notice "$PROJECT_TARGET"; then
-    echo "ERROR: GEAK requires accepting the third-party download notice." >&2
-    exit 1
-  fi
-  install_geak_into_project "$PROJECT_TARGET"
+if [[ "$LOCAL_MODE" == "true" ]]; then
+  configure_local_project "$PROJECT_TARGET"
 fi
 
 if [[ "$SAVE_CONFIG" == "true" ]]; then
@@ -264,15 +367,6 @@ case "$AGENT_FRAMEWORK" in
       echo "  export ANTHROPIC_API_KEY=<your-key>"
       echo "  opencode"
     fi
-    if [[ "${GEAK_ENABLED:-false}" == "true" ]]; then
-      echo ""
-      echo "  GEAK jobs call Anthropic from the compute node. Set once before init"
-      echo "  (writes .anthropic_api_key) or create the file manually:"
-      echo "    export GEAK_ANTHROPIC_API_KEY=sk-ant-..."
-      echo "    hpc-assistant-init --geak --force   # refresh key file if needed"
-      echo "  SLURM jobs use lumi-multitorch (see geak/run-geak.sbatch)."
-      echo "  Load: module use /appl/local/laifs/modules && module load lumi-aif-singularity-bindings"
-    fi
     ;;
   claude-code)
     if uses_litellm_proxy; then
@@ -285,3 +379,36 @@ case "$AGENT_FRAMEWORK" in
     fi
     ;;
 esac
+
+if [[ "$LOCAL_MODE" == "true" ]]; then
+  echo ""
+  echo "Local mode — before your first session:"
+  echo "  1. Confirm the connection works and is multiplexed:"
+  echo "       ssh $REMOTE_HOST true && ssh -O check $REMOTE_HOST"
+  case "$FILE_ACCESS_MODE" in
+    git)
+      echo "  2. Make sure both sides track the same git remote, so neither is"
+      echo "     authoritative by fiat:"
+      echo "       git -C . remote -v"
+      echo "       ssh $REMOTE_HOST \"git -C '$REMOTE_ROOT' remote -v\""
+      ;;
+    sshfs)
+      echo "  2. Mount the cluster directory (keep the mountpoint outside this project):"
+      echo "       mkdir -p \"$SSHFS_MOUNTPOINT\""
+      echo "       sshfs $REMOTE_HOST:\"$REMOTE_ROOT\" \"$SSHFS_MOUNTPOINT\" \\"
+      echo "         -o reconnect,ServerAliveInterval=15,ServerAliveCountMax=3"
+      echo "     Unmount when you are done, and after any dropped connection:"
+      if [[ "$(uname -s)" == "Darwin" ]]; then
+        echo "       umount \"$SSHFS_MOUNTPOINT\""
+      else
+        echo "       fusermount -u \"$SSHFS_MOUNTPOINT\""
+      fi
+      ;;
+    rsync)
+      echo "  2. Check what a push would transfer before trusting it (never add --delete):"
+      echo "       rsync -avn ./ $REMOTE_HOST:\"$REMOTE_ROOT\"/"
+      ;;
+  esac
+  echo "  3. Read LOCAL-MODE.md, and review .hpc-assistant.json — its limits are the"
+  echo "     policy boundary the assistant enforces."
+fi

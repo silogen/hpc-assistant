@@ -66,30 +66,133 @@ License: Apache-2.0
 
 ---
 
-GEAK runtime (optional; not in hpc-assistant container images)
-Fetched on LUMI GPU compute nodes when GEAK is enabled, via geak/setup-geak.sh
-inside the site-provided lumi-multitorch Singularity image.
+hpc-mcp local-mode virtualenv — Python dependencies
+Installed on the user's machine by bin/hpc-assistant-local-setup into
+~/.local/share/hpc-assistant/venv (not a container). Versions are pinned in
+hpc-mcp/requirements.txt. The AMD-authored hpc-mcp package itself is
+MIT; see LICENSE.
 
-GEAK
-Copyright (c) 2025 Kilian A. Lieret and Carlos E. Jimenez
+mcp (PyPI; declared dependency of hpc-mcp)
+Copyright (c) Model Context Protocol a Series of LF Projects, LLC.
 License: MIT
-https://github.com/AMD-AGI/GEAK
+https://pypi.org/project/mcp/
 
-fastmcp (PyPI; installed directly by setup-geak.sh)
-Copyright (c) Jeremiah Lowin
+mcp-types (PyPI; required by mcp)
+Copyright (c) Model Context Protocol a Series of LF Projects, LLC.
+License: MIT
+https://pypi.org/project/mcp-types/
+
+annotated-types
+Copyright (c) Adrian Garcia Badaracco, Samuel Colvin, and contributors
+License: MIT
+
+anyio
+Copyright (c) Alex Grönholm
+License: MIT
+
+attrs
+Copyright (c) Hynek Schlawack
+License: MIT
+
+cffi
+Copyright (c) Armin Rigo, Maciej Fijalkowski
+License: MIT-0
+
+click
+Copyright (c) Pallets
+License: BSD-3-Clause
+
+cryptography
+Copyright (c) The Python Cryptographic Authority and individual contributors
+License: Apache-2.0 OR BSD-3-Clause (dual-licensed; you may use either license)
+
+h11
+Copyright (c) Nathaniel J. Smith
+License: MIT
+
+httpcore2
+Copyright (c) Tom Christie and contributors (Encode / Pydantic)
+License: BSD-3-Clause
+
+httpx2
+Copyright (c) Tom Christie and contributors (Encode / Pydantic)
+License: BSD-3-Clause
+
+idna
+Copyright (c) Kim Davies and contributors
+License: BSD-3-Clause
+
+jsonschema
+Copyright (c) Julian Berman
+License: MIT
+
+jsonschema-specifications
+Copyright (c) Julian Berman
+License: MIT
+
+opentelemetry-api
+Copyright (c) OpenTelemetry Authors
 License: Apache-2.0
-https://pypi.org/project/fastmcp/
 
-Note: setup-geak.sh also clones and installs Metrix from the AMD-authored
-intellikit repository (https://github.com/AMDResearch/intellikit, MIT) and
-editable installs of GEAK MCP tool packages from the GEAK repository.
-GEAK and those packages pull additional transitive Python dependencies at job
-runtime; those packages retain their original copyright and license terms as
-published on the Python Package Index or in the GEAK repository.
+pycparser
+Copyright (c) Eli Bendersky
+License: BSD-3-Clause
 
-The LUMI multitorch Singularity image (site-provided; not distributed by this
-repository) may include PyTorch, Triton, and other third-party components under
-their respective licenses.
+pydantic
+Copyright (c) Samuel Colvin and other contributors
+License: MIT
+
+pydantic_core
+Copyright (c) Samuel Colvin and other contributors
+License: MIT
+
+PyJWT
+Copyright (c) Jose Padilla
+License: MIT
+
+python-multipart
+Copyright (c) Andrew Dunham
+License: Apache-2.0
+
+referencing
+Copyright (c) Julian Berman
+License: MIT
+
+rpds-py
+Copyright (c) Julian Berman
+License: MIT
+
+sse-starlette
+Copyright (c) sysid
+License: BSD-3-Clause
+
+starlette
+Copyright (c) Tom Christie
+License: BSD-3-Clause
+
+truststore
+Copyright (c) Seth Michael Larson, David Glick
+License: MIT
+
+typing-inspection
+Copyright (c) Victorien Plot
+License: MIT
+
+typing_extensions
+Copyright (c) Guido van Rossum, Jukka Lehtosalo, Łukasz Langa, Michael Lee, and contributors
+License: PSF-2.0
+
+uvicorn
+Copyright (c) Tom Christie and contributors (Encode)
+License: BSD-3-Clause
+
+hatchling (PyPI; build backend only — pip fetches it in an isolated build
+environment when installing hpc-mcp from source; it is not left in the venv)
+Copyright (c) Ofek Lev
+License: MIT
+https://pypi.org/project/hatchling/
+
+---
 
 ---
 
@@ -111,15 +214,10 @@ https://www.debian.org/distrib/packages.
 
 ---
 
-Development only (not distributed with end-user software)
-
-geak/opencode/plugins/package.json lists @opencode-ai/plugin for local
-TypeScript type-checking only. OpenCode loads geak-guards.ts directly; this
-package is not installed on HPC login or compute nodes.
-
-@opencode-ai/plugin (types only)
-https://opencode.ai/
-(See the OpenCode project for license terms.)
+pytest (optional extra hpc-mcp[dev]; used to run hpc-mcp/tests)
+Copyright (c) Holger Krekel and others
+License: MIT
+https://pypi.org/project/pytest/
 
 ---
 
@@ -141,6 +239,11 @@ Each container image installs additional transitive Python packages at build
 time (for example LangChain Text Splitters, Starlette, Pydantic, NumPy, and
 others pulled by the packages above). Those packages retain their original
 copyright and license terms as published on the Python Package Index.
+
+The hpc-mcp local-mode virtualenv pins its full third-party graph in
+hpc-mcp/requirements.txt; those packages are listed in the hpc-mcp
+section above. Run `pip list --format=freeze` in
+~/.local/share/hpc-assistant/venv for the installed inventory.
 
 GEAK jobs likewise install transitive Python packages at runtime inside the
 compute-node environment (see the GEAK runtime section above). Run

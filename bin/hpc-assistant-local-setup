@@ -1,0 +1,369 @@
+#!/usr/bin/env bash
+# Copyright Advanced Micro Devices, Inc.
+#
+# SPDX-License-Identifier: MIT
+#
+# One-step local-mode setup: install the hpc-mcp bridge into a managed virtualenv on this
+# machine, then initialise a project against a cluster.
+#
+# On the cluster, `module load hpc-assistant` puts hpc-assistant-init on PATH and the
+# bridge is not needed at all. Locally there is no module system to lean on, so this
+# script is the equivalent entry point.
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: hpc-assistant-local-setup [OPTIONS] [PROJECT_DIR]
+
+Set up local mode on this machine in one step: install the hpc-mcp bridge into a managed
+virtualenv, initialise PROJECT_DIR (default: current directory) for local mode, point the
+agent's MCP configuration at the installed bridge by absolute path, and check the
+connection to the cluster.
+
+Re-running is safe: an existing virtualenv is reused and existing project files are left
+alone unless you pass --force.
+
+Bridge options:
+  --venv PATH       Where to keep the managed virtualenv
+                    (default: $XDG_DATA_HOME/hpc-assistant/venv, i.e.
+                    ~/.local/share/hpc-assistant/venv)
+  --python PATH     Interpreter to build it with (default: the newest python3 >= 3.10
+                    found on PATH)
+  --reinstall       Delete and rebuild the virtualenv before installing
+  --link            Also symlink hpc-mcp into ~/.local/bin, so you can run it yourself
+  --no-check        Skip the closing `hpc-mcp --check` (which opens an SSH connection)
+  --uninstall       Remove the managed virtualenv and exit. Project files are left in
+                    place; the command prints what to delete.
+  -h, --help        Show this help
+
+Every other option is passed through to `hpc-assistant-init --local`, including:
+  --remote-host ALIAS      SSH host alias for the cluster (default: lumi)
+  --remote-root PATH       Project directory on the cluster; everything the assistant
+                           does remotely is bounded to this path (required on first
+                           init; later runs reuse .hpc-assistant.json)
+  --account NAME           Slurm account to bill jobs to
+  --file-access MODE       rsync (default and only supported mode)
+  --partition NAME         Default Slurm partition
+  --framework NAME         opencode (default) or claude-code
+  --inference NAME         anthropic (default), aitta, or custom-openai
+  -d, --dir DIR            Project directory
+  -f, --force              Overwrite existing project config files
+  --with-skill NAME        Opt in to an optional skill (repeatable), e.g. geak-optimization
+  --no-optional-skills     Do not install optional skills (overrides a saved list)
+Run `hpc-assistant-init --help` for the full list.
+
+Environment:
+  HPC_ASSISTANT_VENV      Default for --venv
+  HPC_ASSISTANT_PYTHON    Default for --python
+  HPC_ASSISTANT_BINDIR    Where --link puts the symlink (default: ~/.local/bin)
+  HPC_ASSISTANT_PIP_ARGS  Extra arguments for the install, for networks that need a
+                          proxy, an internal index, or a specific CA bundle, e.g.
+                          '--index-url https://your.index/simple'
+
+Examples:
+  # In a local clone of your project:
+  hpc-assistant-local-setup \
+    --remote-root /scratch/project_465000000/$USER/myapp \
+    --account project_465000000
+  export AITTA_TOKEN=... && opencode
+
+  # Claude Code instead of OpenCode, against a non-default cluster alias:
+  hpc-assistant-local-setup --framework claude-code --remote-host lumi-uan01 \
+    --remote-root /scratch/project_465000000/$USER/myapp \
+    --account project_465000000
+
+  # Start over:
+  hpc-assistant-local-setup --uninstall
+EOF
+}
+
+HPC_ASSISTANT_ROOT="${HPC_ASSISTANT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+HPC_MCP_DIR="$HPC_ASSISTANT_ROOT/hpc-mcp"
+HPC_MCP_REQUIREMENTS="$HPC_MCP_DIR/requirements.txt"
+DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+VENV_DIR="${HPC_ASSISTANT_VENV:-$DATA_HOME/hpc-assistant/venv}"
+PYTHON_BIN="${HPC_ASSISTANT_PYTHON:-}"
+LINK_DIR="${HPC_ASSISTANT_BINDIR:-$HOME/.local/bin}"
+REINSTALL=false
+DO_LINK=false
+RUN_CHECK=true
+UNINSTALL=false
+PROJECT_TARGET="$PWD"
+INIT_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --venv)
+      VENV_DIR="$2"
+      shift 2
+      ;;
+    --python)
+      PYTHON_BIN="$2"
+      shift 2
+      ;;
+    --reinstall)
+      REINSTALL=true
+      shift
+      ;;
+    --link)
+      DO_LINK=true
+      shift
+      ;;
+    --no-check)
+      RUN_CHECK=false
+      shift
+      ;;
+    --uninstall)
+      UNINSTALL=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -d|--dir)
+      PROJECT_TARGET="$2"
+      INIT_ARGS+=("$1" "$2")
+      shift 2
+      ;;
+    --remote-host|--remote-root|--account|--file-access|--sshfs-mountpoint|--partition|--framework|--inference|--api-base|--model|--sif-path|--site|--with-skill)
+      INIT_ARGS+=("$1" "$2")
+      shift 2
+      ;;
+    -f|--force|--no-save-config|--no-optional-skills)
+      INIT_ARGS+=("$1")
+      shift
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      echo "       Options for the project itself are listed by:" >&2
+      echo "         hpc-assistant-init --help" >&2
+      usage >&2
+      exit 1
+      ;;
+    *)
+      PROJECT_TARGET="$1"
+      INIT_ARGS+=("-d" "$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ "$UNINSTALL" == "true" ]]; then
+  echo "HPC Assistant — removing the local-mode bridge"
+  if [[ -d "$VENV_DIR" ]]; then
+    rm -rf "$VENV_DIR"
+    echo "  Removed $VENV_DIR"
+  else
+    echo "  Nothing to remove at $VENV_DIR"
+  fi
+  if [[ -L "$LINK_DIR/hpc-mcp" ]]; then
+    rm -f "$LINK_DIR/hpc-mcp"
+    echo "  Removed $LINK_DIR/hpc-mcp"
+  fi
+  echo ""
+  echo "Project files are left as they are. To remove local mode from a project:"
+  echo "  rm .hpc-assistant.json           # the connection and its limits"
+  echo "  rm -r .hpc-assistant             # the audit log of everything sent to the cluster"
+  echo "  # then drop the 'hpc-mcp' entry from opencode.json (or .mcp.json)"
+  exit 0
+fi
+
+# Fail before installing anything if the one argument with no safe default is missing.
+if [[ -z "${REMOTE_ROOT:-}" ]]; then
+  case " ${INIT_ARGS[*]-} " in
+    *" --remote-root "*) ;;
+    *)
+      echo "ERROR: --remote-root is required: the project directory on the cluster." >&2
+      echo "       Everything the assistant does remotely is bounded to that path, so" >&2
+      echo "       there is no safe default. For example:" >&2
+      echo "         --remote-root /scratch/project_465000000/\$USER/myapp" >&2
+      exit 1
+      ;;
+  esac
+fi
+
+# The Lmod module puts this whole directory on PATH, so the script is also reachable from a
+# login node, where it is the wrong tool: an agent already on the cluster needs no bridge.
+if command -v sbatch >/dev/null 2>&1; then
+  echo "NOTE: sbatch is on PATH, so this looks like a cluster node. Local mode is for" >&2
+  echo "      your own machine. On the cluster, 'module load hpc-assistant' and then" >&2
+  echo "      'hpc-assistant-init' is what you want. Continuing anyway." >&2
+  echo "" >&2
+fi
+
+if [[ ! -d "$HPC_MCP_DIR" ]]; then
+  echo "ERROR: the bridge source is not where it should be: $HPC_MCP_DIR" >&2
+  echo "       Run this script from a checkout of the hpc-assistant repository," >&2
+  echo "       or set HPC_ASSISTANT_ROOT to point at one." >&2
+  exit 1
+fi
+if [[ ! -f "$HPC_MCP_REQUIREMENTS" ]]; then
+  echo "ERROR: pinned requirements are not where they should be: $HPC_MCP_REQUIREMENTS" >&2
+  exit 1
+fi
+
+# 3.10 is the floor the bridge is written against (match statements, PEP 604 unions).
+is_new_enough() {
+  "$1" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' \
+    >/dev/null 2>&1
+}
+
+find_python() {
+  local candidate resolved
+  for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
+    resolved="$(command -v "$candidate" 2>/dev/null)" || continue
+    if is_new_enough "$resolved"; then
+      printf '%s\n' "$resolved"
+      return 0
+    fi
+  done
+  return 1
+}
+
+echo "HPC Assistant — local-mode setup"
+echo "  Install root   : $HPC_ASSISTANT_ROOT"
+echo "  Project dir    : $PROJECT_TARGET"
+echo "  Bridge venv    : $VENV_DIR"
+echo ""
+
+echo "── Installing the bridge ──"
+
+if [[ -n "$PYTHON_BIN" ]]; then
+  if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
+    echo "  ERROR: no such interpreter: $PYTHON_BIN" >&2
+    exit 1
+  fi
+  PYTHON_BIN="$(command -v "$PYTHON_BIN")"
+  if ! is_new_enough "$PYTHON_BIN"; then
+    echo "  ERROR: $PYTHON_BIN is older than Python 3.10, which the bridge requires." >&2
+    exit 1
+  fi
+elif ! PYTHON_BIN="$(find_python)"; then
+  echo "  ERROR: no Python 3.10 or newer found on PATH." >&2
+  echo "         Install one (python.org, your package manager, pyenv, or uv), then" >&2
+  echo "         re-run — or point at an existing one with --python." >&2
+  exit 1
+fi
+echo "  Interpreter    : $PYTHON_BIN ($("$PYTHON_BIN" -c 'import platform; print(platform.python_version())'))"
+
+if [[ "$REINSTALL" == "true" && -d "$VENV_DIR" ]]; then
+  rm -rf "$VENV_DIR"
+  echo "  Removed the previous virtualenv"
+fi
+
+if [[ ! -x "$VENV_DIR/bin/python" ]]; then
+  mkdir -p "$(dirname "$VENV_DIR")"
+  "$PYTHON_BIN" -m venv "$VENV_DIR"
+  echo "  Created the virtualenv"
+else
+  echo "  Reusing the existing virtualenv"
+fi
+
+# --upgrade so that a checkout newer than the installed copy actually wins.
+PIP_ARGS=(install --quiet --upgrade --disable-pip-version-check)
+if [[ -n "${HPC_ASSISTANT_PIP_ARGS:-}" ]]; then
+  read -r -a pip_extra <<< "$HPC_ASSISTANT_PIP_ARGS"
+  PIP_ARGS+=("${pip_extra[@]}")
+fi
+
+PIP_LOG="$(mktemp "${TMPDIR:-/tmp}/hpc-mcp-install.XXXXXX")"
+trap 'rm -f "$PIP_LOG"' EXIT
+
+run_pip() {
+  # -r pins the third-party graph; the local tree is hpc-mcp itself.
+  "$VENV_DIR/bin/python" -m pip "${PIP_ARGS[@]}" \
+    -r "$HPC_MCP_REQUIREMENTS" "$HPC_MCP_DIR" >"$PIP_LOG" 2>&1
+}
+
+install_failed() {
+  {
+    echo ""
+    sed 's/^/  | /' "$PIP_LOG"
+    echo ""
+    echo "  ERROR: could not install the bridge from $HPC_MCP_DIR"
+    echo "         If your network needs a proxy, an internal index, or a specific CA"
+    echo "         bundle, pass it through and re-run:"
+    echo "           HPC_ASSISTANT_PIP_ARGS='--index-url https://your.index/simple' \\"
+    echo "             hpc-assistant-local-setup ..."
+  } >&2
+  exit 1
+}
+
+if ! run_pip; then
+  # pip verifies TLS against its own bundled CA list, not the store the interpreter
+  # itself uses. Behind a TLS-inspecting proxy the interpreter often trusts the
+  # intercepting certificate while pip does not, which is the difference between a
+  # working `python3 -c urlopen` and a failing install. PIP_CERT rather than --cert,
+  # because the build backend is fetched by a nested pip that inherits only the
+  # environment.
+  CA_FILE="$("$VENV_DIR/bin/python" -c \
+    'import ssl; print(ssl.get_default_verify_paths().cafile or "")' 2>/dev/null || true)"
+  if grep -q 'CERTIFICATE_VERIFY_FAILED' "$PIP_LOG" && [[ -n "$CA_FILE" && -f "$CA_FILE" ]]; then
+    echo "  pip could not verify PyPI's certificate; retrying against the CA bundle this"
+    echo "  interpreter trusts ($CA_FILE)"
+    export PIP_CERT="$CA_FILE"
+    run_pip || install_failed
+  else
+    install_failed
+  fi
+fi
+
+HPC_MCP_BIN="$VENV_DIR/bin/hpc-mcp"
+if [[ ! -x "$HPC_MCP_BIN" ]]; then
+  echo "  ERROR: the install reported success but produced no hpc-mcp entry point at" >&2
+  echo "         $HPC_MCP_BIN" >&2
+  exit 1
+fi
+echo "  Installed      : $HPC_MCP_BIN"
+
+if [[ "$DO_LINK" == "true" ]]; then
+  mkdir -p "$LINK_DIR"
+  ln -sf "$HPC_MCP_BIN" "$LINK_DIR/hpc-mcp"
+  echo "  Linked         : $LINK_DIR/hpc-mcp"
+  case ":$PATH:" in
+    *":$LINK_DIR:"*) ;;
+    *)
+      echo "  NOTE: $LINK_DIR is not on your PATH, so the link is not yet callable." >&2
+      echo "        Add it to your shell profile if you want to run hpc-mcp yourself." >&2
+      ;;
+  esac
+fi
+echo ""
+
+# The absolute path is what gets written into the agent's MCP configuration, so a session
+# does not depend on PATH — the agent may well be launched from a desktop environment
+# that never sourced a shell profile.
+export HPC_MCP_COMMAND="$HPC_MCP_BIN"
+if [[ ${#INIT_ARGS[@]} -gt 0 ]]; then
+  "$HPC_ASSISTANT_ROOT/bin/hpc-assistant-init" --local "${INIT_ARGS[@]}"
+else
+  "$HPC_ASSISTANT_ROOT/bin/hpc-assistant-init" --local
+fi
+
+run_check() {
+  (cd "$PROJECT_TARGET" && "$HPC_MCP_BIN" --check)
+}
+
+if [[ "$RUN_CHECK" == "true" ]]; then
+  echo ""
+  echo "── Checking the connection ──"
+  # A busy login node closes the occasional cold connection, so one refusal is not
+  # yet a verdict on the setup.
+  if ! run_check; then
+    echo ""
+    echo "  That can be the login node being busy rather than anything being wrong."
+    echo "  Trying once more."
+    sleep 3
+    if ! run_check; then
+      {
+        echo ""
+        echo "The bridge is installed and the project is configured, but the check above"
+        echo "did not pass. Fix that before your first session — the agent will hit the"
+        echo "same wall. Re-run the check on its own with:"
+        echo "  (cd $PROJECT_TARGET && $HPC_MCP_BIN --check)"
+      } >&2
+      exit 1
+    fi
+  fi
+fi

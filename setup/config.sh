@@ -10,13 +10,9 @@ PROJECT_DIR="${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 SETUP_DIR="${SETUP_DIR:-$PROJECT_DIR/setup}"
 SKILLS_DIR="${SKILLS_DIR:-$PROJECT_DIR/skills}"
 
-# GEAK: bundled assets live under geak/ at repo root; skills live under skills/.
-# GEAK_DIR must always resolve from this file's location (not $PROJECT_DIR) so
-# hpc-assistant-init can install into an arbitrary project directory.
-GEAK_SKILLS="optimize-kernel check-geak-job cancel-geak-job"
-GEAK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/geak"
-# shellcheck source=../geak/download-notice.sh
-source "$GEAK_DIR/download-notice.sh"
+# The MCP bridge must resolve from this file's location, not $PROJECT_DIR, because
+# hpc-assistant-init installs into an arbitrary project directory.
+HPC_MCP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/hpc-mcp"
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hpc-assistant"
 CONFIG_FILE="$CONFIG_DIR/config.env"
@@ -50,9 +46,9 @@ detect_container_runtime() {
 
 # ── HPC site configuration ───────────────────────────────────────────────────
 # Sets: SITE_DOCS_REPO, SITE_DOCS_SUBPATH, SITE_DOCS_GLOB, SITE_DOCS_FILE_TYPE,
-#       SITE_COLLECTION, SITE_SKILLS, and (optionally) SITE_HAS_REMOTE_MCP,
-#       SITE_REMOTE_MCP_NAME, SITE_REMOTE_MCP_URL, SITE_REMOTE_MCP_TOOL,
-#       SITE_REMOTE_MCP_DESCRIPTION
+#       SITE_COLLECTION, SITE_SKILLS, SITE_OPTIONAL_SKILLS, and (optionally)
+#       SITE_HAS_REMOTE_MCP, SITE_REMOTE_MCP_NAME, SITE_REMOTE_MCP_URL,
+#       SITE_REMOTE_MCP_TOOL, SITE_REMOTE_MCP_DESCRIPTION
 get_site_config() {
   local site="$1"
 
@@ -62,6 +58,7 @@ get_site_config() {
   SITE_REMOTE_MCP_URL=""
   SITE_REMOTE_MCP_TOOL=""
   SITE_REMOTE_MCP_DESCRIPTION=""
+  SITE_OPTIONAL_SKILLS=""
 
   case "$site" in
     LUMI)
@@ -71,6 +68,7 @@ get_site_config() {
       SITE_DOCS_FILE_TYPE="markdown"
       SITE_COLLECTION="LUMI_documentation"
       SITE_SKILLS="profiling energy-profiling lumi-resource-management lumi-slurm-job-management"
+      SITE_OPTIONAL_SKILLS="geak-optimization"
       # LUMI AI Factory provides a public, regularly-updated MCP server
       # over the LUMI Docs and LUMI AI Guide knowledge base.
       # https://docs.lumi-supercomputer.eu/laif/software/agent-infrastructure/#mcp-server
@@ -165,8 +163,8 @@ select_inference_backend() {
 
       # Known default models are listed in setup/aitta-proxy/config.yaml.
       echo "  (Known models are listed in setup/aitta-proxy/config.yaml)"
-      read -rp "Target model [openai/gpt-oss-120b]: " INPUT
-      TARGET_MODEL="${INPUT:-openai/gpt-oss-120b}"
+      read -rp "Target model [Qwen/Qwen3.6-27B]: " INPUT
+      TARGET_MODEL="${INPUT:-Qwen/Qwen3.6-27B}"
 
       read -rp "Proxy port [8001]: " INPUT
       PROXY_PORT="${INPUT:-8001}"
@@ -293,9 +291,6 @@ save_credentials() {
         fi
         ;;
     esac
-    if [[ "${GEAK_ENABLED:-false}" == "true" ]] && [[ -n "${GEAK_ANTHROPIC_API_KEY:-}" ]]; then
-      echo "GEAK_ANTHROPIC_API_KEY=$GEAK_ANTHROPIC_API_KEY"
-    fi
   } >> "$CREDENTIALS_FILE"
 }
 
@@ -325,7 +320,15 @@ save_config() {
       echo "PROXY_PORT=${PROXY_PORT:-8001}"
       echo "PROXY_HOST=${PROXY_HOST:-}"
     fi
-    echo "GEAK_ENABLED=${GEAK_ENABLED:-false}"
+    echo "ENABLED_OPTIONAL_SKILLS=${ENABLED_OPTIONAL_SKILLS:-}"
+    echo "LOCAL_MODE=${LOCAL_MODE:-false}"
+    if [[ "${LOCAL_MODE:-false}" == "true" ]]; then
+      echo "REMOTE_HOST=${REMOTE_HOST:-}"
+      echo "REMOTE_ROOT=${REMOTE_ROOT:-}"
+      echo "SLURM_ACCOUNT=${SLURM_ACCOUNT:-}"
+      echo "FILE_ACCESS_MODE=${FILE_ACCESS_MODE:-rsync}"
+      echo "SSHFS_MOUNTPOINT=${SSHFS_MOUNTPOINT:-}"
+    fi
   } > "$CONFIG_FILE"
 }
 
@@ -347,6 +350,8 @@ load_config() {
 
   # Backward-compat: configs written before KB_BACKEND existed are local-chroma.
   KB_BACKEND="${KB_BACKEND:-local-chroma}"
+  # Configs written before optional skills existed install none of them.
+  ENABLED_OPTIONAL_SKILLS="${ENABLED_OPTIONAL_SKILLS:-}"
 }
 
 # ── Agent project configuration (shared by setup.sh and hpc-assistant-init) ───
@@ -423,17 +428,127 @@ render_opencode_json() {
   esac
 }
 
+optional_skill_description() {
+  case "$1" in
+    geak-optimization)
+      echo "GEAK GPU kernel optimizer (AMD Instinct). Extra GEAK install + API key; skip for normal HPC jobs."
+      ;;
+    *)
+      echo "optional skill"
+      ;;
+  esac
+}
+
+is_known_optional_skill() {
+  local name="$1" skill
+  for skill in ${SITE_OPTIONAL_SKILLS:-}; do
+    [[ "$skill" == "$name" ]] && return 0
+  done
+  return 1
+}
+
+is_optional_skill_enabled() {
+  local name="$1" skill
+  for skill in ${ENABLED_OPTIONAL_SKILLS:-}; do
+    [[ "$skill" == "$name" ]] && return 0
+  done
+  return 1
+}
+
+enable_optional_skill() {
+  local name="$1"
+  if ! is_known_optional_skill "$name"; then
+    echo "ERROR: '$name' is not an optional skill for ${HPC_SITE:-this site}." >&2
+    echo "Available optional skills: ${SITE_OPTIONAL_SKILLS:-<none>}" >&2
+    return 1
+  fi
+  if is_optional_skill_enabled "$name"; then
+    return 0
+  fi
+  ENABLED_OPTIONAL_SKILLS="${ENABLED_OPTIONAL_SKILLS:+$ENABLED_OPTIONAL_SKILLS }$name"
+}
+
+# Read ENABLED_OPTIONAL_SKILLS from an existing config.env without sourcing the
+# rest of the file (which would clobber flags already parsed by the caller).
+load_saved_optional_skills() {
+  [[ -f "$CONFIG_FILE" ]] || return 0
+  local val skill kept=""
+  val="$(grep -E '^ENABLED_OPTIONAL_SKILLS=' "$CONFIG_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' || true)"
+  ENABLED_OPTIONAL_SKILLS="${val:-}"
+  for skill in ${ENABLED_OPTIONAL_SKILLS:-}; do
+    if is_known_optional_skill "$skill"; then
+      kept="${kept:+$kept }$skill"
+    else
+      echo "WARNING: ignoring unknown optional skill '$skill'" >&2
+    fi
+  done
+  ENABLED_OPTIONAL_SKILLS="$kept"
+}
+
+# Interactive opt-in for SITE_OPTIONAL_SKILLS. Defaults to the current
+# ENABLED_OPTIONAL_SKILLS value (empty unless load_saved_optional_skills ran).
+select_optional_skills() {
+  ENABLED_OPTIONAL_SKILLS="${ENABLED_OPTIONAL_SKILLS:-}"
+  if [[ -z "${SITE_OPTIONAL_SKILLS:-}" ]]; then
+    ENABLED_OPTIONAL_SKILLS=""
+    return 0
+  fi
+
+  echo "── Optional skills ──"
+  echo "These are not copied into the agent unless you enable them."
+  echo ""
+
+  local skill choice default_yes default_prompt selected=""
+  for skill in $SITE_OPTIONAL_SKILLS; do
+    default_yes=false
+    default_prompt="y/N"
+    if is_optional_skill_enabled "$skill"; then
+      default_yes=true
+      default_prompt="Y/n"
+    fi
+    echo "  $skill — $(optional_skill_description "$skill")"
+    read -rp "  Enable $skill? [$default_prompt]: " choice
+    case "$choice" in
+      Y|y) selected="${selected:+$selected }$skill" ;;
+      N|n) ;;
+      "")
+        if [[ "$default_yes" == "true" ]]; then
+          selected="${selected:+$selected }$skill"
+        fi
+        ;;
+      *) echo "Invalid choice." >&2; exit 1 ;;
+    esac
+    echo ""
+  done
+  ENABLED_OPTIONAL_SKILLS="$selected"
+}
+
+_copy_skill() {
+  local dest_root="$1" skill="$2"
+  if [[ -d "$SKILLS_DIR/$skill" ]]; then
+    echo "  Installing skill: $skill"
+    rm -rf "$dest_root/$skill"
+    cp -r "$SKILLS_DIR/$skill" "$dest_root/$skill"
+  else
+    echo "  WARNING: Skill directory not found: $SKILLS_DIR/$skill" >&2
+  fi
+}
+
 install_site_skills() {
   local dest_root="$1"
   mkdir -p "$dest_root"
 
+  local skill
   for skill in $SITE_SKILLS; do
-    if [[ -d "$SKILLS_DIR/$skill" ]]; then
-      echo "  Installing skill: $skill"
+    _copy_skill "$dest_root" "$skill"
+  done
+
+  for skill in ${SITE_OPTIONAL_SKILLS:-}; do
+    if is_optional_skill_enabled "$skill"; then
+      _copy_skill "$dest_root" "$skill"
+    elif [[ -d "$dest_root/$skill" ]]; then
+      echo "  Removing disabled optional skill: $skill"
       rm -rf "$dest_root/$skill"
-      cp -r "$SKILLS_DIR/$skill" "$dest_root/$skill"
-    else
-      echo "  WARNING: Skill directory not found: $SKILLS_DIR/$skill" >&2
     fi
   done
 }
@@ -513,17 +628,455 @@ configure_claude_code_project() {
   fi
 }
 
+# ── Local mode (agent on the user's machine, cluster over SSH) ─────────────────
+# Local mode installs the same skills and system prompt into a project directory on
+# the user's own machine, plus a .hpc-assistant.json declaring the remote host,
+# project root and the bounds the assistant honours. See LOCAL-MODE.md.
+
+# Only rsync is supported. git and sshfs were designed and partly implemented but never
+# tested end to end, so they are not offered rather than shipped unverified. Re-adding one
+# means listing it here, restoring its block in templates/hpc-assistant-local.json, adding
+# it to FILE_ACCESS_MODES in hpc-mcp/src/hpc_mcp/config.py, and documenting it in
+# LOCAL-MODE.md and the local-mode prompt.
+LOCAL_MODE_FILE_ACCESS_MODES="rsync"
+
+local_mode_defaults() {
+  LOCAL_ROOT="${LOCAL_ROOT:-$PWD}"
+  REMOTE_HOST="${REMOTE_HOST:-lumi}"
+  REMOTE_ROOT="${REMOTE_ROOT:-}"
+  SLURM_ACCOUNT="${SLURM_ACCOUNT:-}"
+  FILE_ACCESS_MODE="${FILE_ACCESS_MODE:-rsync}"
+  SSHFS_MOUNTPOINT="${SSHFS_MOUNTPOINT:-$HOME/mnt/$REMOTE_HOST}"
+  DEFAULT_PARTITION="${DEFAULT_PARTITION:-small-g}"
+}
+
+validate_file_access_mode() {
+  local mode="$1"
+  for known in $LOCAL_MODE_FILE_ACCESS_MODES; do
+    if [[ "$mode" == "$known" ]]; then
+      return 0
+    fi
+  done
+  echo "ERROR: Unknown file access mode: $mode" >&2
+  echo "       Expected one of: ${LOCAL_MODE_FILE_ACCESS_MODES// /, }" >&2
+  return 1
+}
+
+# Advisory checks only. Init must still succeed on a machine whose SSH config is not
+# finished yet, so nothing here is fatal — but every warning is something that will
+# bite the user later, so each one names the fix.
+check_local_prerequisites() {
+  local host="$1"
+
+  if ! command -v ssh &>/dev/null; then
+    echo "  WARNING: ssh not found in PATH — the assistant cannot reach the cluster." >&2
+    return 0
+  fi
+
+  local resolved=""
+  resolved="$(ssh -G "$host" 2>/dev/null | awk '/^hostname /{print $2; exit}')"
+  if [[ -z "$resolved" ]]; then
+    echo "  WARNING: could not read SSH config for host '$host'." >&2
+  elif [[ "$resolved" == "$host" ]]; then
+    echo "  WARNING: '$host' does not look like a configured SSH host alias." >&2
+    echo "           Add a Host block for it in ~/.ssh/config — see LOCAL-MODE.md." >&2
+  fi
+
+  # ControlMaster multiplexing is what keeps the connection profile defensible: without
+  # it every single operation opens and authenticates a new SSH connection.
+  local controlmaster=""
+  controlmaster="$(ssh -G "$host" 2>/dev/null | awk '/^controlmaster /{print $2; exit}')"
+  if [[ -z "$controlmaster" || "$controlmaster" == "false" || "$controlmaster" == "no" ]]; then
+    echo "  WARNING: ControlMaster is not enabled for '$host'." >&2
+    echo "           Without it, each operation opens a new SSH connection — a worse" >&2
+    echo "           login-node profile than running on the cluster. Add to ~/.ssh/config:" >&2
+    echo "" >&2
+    echo "             Host $host" >&2
+    echo "                 ControlMaster auto" >&2
+    echo "                 ControlPath ~/.ssh/cm-%r@%h:%p" >&2
+    echo "                 ControlPersist 10m" >&2
+    echo "" >&2
+  fi
+}
+
+check_sshfs_prerequisites() {
+  local mountpoint="$1" local_root="$2"
+
+  if ! command -v sshfs &>/dev/null; then
+    echo "  WARNING: sshfs not found in PATH." >&2
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      echo "           On macOS this needs macFUSE, which requires a kernel extension and" >&2
+      echo "           (on Apple Silicon) reduced-security approval. See LOCAL-MODE.md." >&2
+    else
+      echo "           Install it with your package manager, e.g. 'apt install sshfs'." >&2
+    fi
+  fi
+
+  # A mount inside the workspace looks like ordinary local disk to the agent's own
+  # file-search tools, which turns every local search into a metadata storm on the
+  # cluster. This is the one mistake that undoes the benefit of running locally.
+  case "$mountpoint" in
+    "$local_root"|"$local_root"/*)
+      echo "  WARNING: the sshfs mountpoint is inside the project directory:" >&2
+      echo "             mountpoint : $mountpoint" >&2
+      echo "             project    : $local_root" >&2
+      echo "           The assistant's file-search tools cannot tell a mount from local" >&2
+      echo "           disk, so a recursive search would hammer the cluster filesystem." >&2
+      echo "           Move the mountpoint outside the project directory." >&2
+      ;;
+  esac
+}
+
+render_hpc_assistant_config() {
+  local dest="$1"
+  sed \
+    -e "s|{{HPC_SITE}}|${HPC_SITE}|g" \
+    -e "s|{{REMOTE_HOST}}|${REMOTE_HOST}|g" \
+    -e "s|{{REMOTE_ROOT}}|${REMOTE_ROOT}|g" \
+    -e "s|{{SLURM_ACCOUNT}}|${SLURM_ACCOUNT}|g" \
+    -e "s|{{DEFAULT_PARTITION}}|${DEFAULT_PARTITION}|g" \
+    -e "s|{{FILE_ACCESS_MODE}}|${FILE_ACCESS_MODE}|g" \
+    -e "s|{{LOCAL_ROOT}}|${LOCAL_ROOT}|g" \
+    -e "s|{{SSHFS_MOUNTPOINT}}|${SSHFS_MOUNTPOINT}|g" \
+    "$SETUP_DIR/templates/hpc-assistant-local.json" > "$dest"
+}
+
+# Nothing in hpc-mcp moves files, so the project needs a transfer command of its own.
+# Rendered rather than documented because the exclude list is the only thing standing
+# between a routine push and overwriting job output on the cluster.
+render_sync_script() {
+  local dest="$1"
+  sed \
+    -e "s|{{REMOTE_HOST}}|${REMOTE_HOST}|g" \
+    -e "s|{{REMOTE_ROOT}}|${REMOTE_ROOT}|g" \
+    "$SETUP_DIR/templates/sync-to-remote.sh" > "$dest"
+  chmod +x "$dest"
+}
+
+# The site prompt describes working on the cluster; local mode changes where work
+# belongs. Appending keeps one source of truth for the shared HPC safety rules.
+append_local_mode_prompt() {
+  local dest="$1"
+  sed \
+    -e "s|{{REMOTE_HOST}}|${REMOTE_HOST}|g" \
+    -e "s|{{REMOTE_ROOT}}|${REMOTE_ROOT}|g" \
+    "$SETUP_DIR/templates/local-mode-prompt.md" >> "$dest"
+}
+
+# OpenCode evaluates bash permissions with the LAST matching rule winning, so the
+# overlay works by appending. Four things change in local mode: every hpc-mcp tool
+# requires approval, because those calls are the actual cluster traffic; paths
+# outside the local project are denied rather than prompted, so the assistant
+# cannot wander the laptop; the login-node template's `ls *` / `find *` allows are
+# revoked, because they do not honour external_directory; raw SSH and file
+# transfer become approval-gated, because otherwise the agent can reach the
+# cluster outside every bound this project declares. Searching the working copy
+# is Read/Glob/Grep, which external_directory can actually bound.
+apply_local_permission_overlay() {
+  local oc_config="$1" file_access_mode="$2"
+
+  if [[ ! -f "$oc_config" ]]; then
+    echo "  ERROR: opencode.json not found at $oc_config" >&2
+    return 1
+  fi
+
+  python3 - "$oc_config" "$file_access_mode" <<'PYEOF'
+import json, sys
+
+path, file_access_mode = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    cfg = json.load(f)
+
+permission = cfg.setdefault("permission", {})
+# OpenCode names MCP tools `{server}_{tool}`. The bridge is registered as `hpc`.
+permission["hpc_*"] = "ask"
+# The project directory is the local bound. "ask" still lets the model try, which
+# is the behaviour we do not want: refuse without a prompt.
+permission["external_directory"] = "deny"
+
+# Policy files live in the project, so "edit": "ask" lets the model rewrite the
+# bound if the user approves. Deny those paths; everything else stays on the
+# existing catch-all (ask, unless the template already used an object).
+edit = permission.get("edit")
+if not isinstance(edit, dict):
+    permission["edit"] = {"*": edit if edit in ("allow", "ask", "deny") else "ask"}
+    edit = permission["edit"]
+elif "*" not in edit:
+    edit["*"] = "ask"
+POLICY_FILES = (
+    "opencode.json",
+    ".hpc-assistant.json",
+    "AGENTS.md",
+    "CLAUDE.md",
+)
+for name in POLICY_FILES:
+    for pattern in (name, f"*/{name}"):
+        edit.pop(pattern, None)
+        edit[pattern] = "deny"
+
+rules = permission.setdefault("bash", {})
+
+def put(pattern, action):
+    """Append a rule, moving it last so it takes precedence."""
+    rules.pop(pattern, None)
+    rules[pattern] = action
+
+# Reaching the cluster outside the declared bounds stays a human decision.
+for cmd in ("ssh", "scp", "sftp", "rsync", "sshfs", "fusermount", "umount"):
+    put(f"{cmd} *", "ask")
+
+# Read-only version control on the local checkout is cheap and constant; gating it
+# just trains the user to approve without reading. Mutating git stays on "git *".
+# Both forms are needed: a glob's "*" cannot match the absent space, so "git status *"
+# never matches a bare "git status", which is how it is usually typed.
+for sub in ("status", "diff", "log", "show", "branch", "remote -v", "rev-parse"):
+    put(f"git {sub}", "allow")
+    put(f"git {sub} *", "allow")
+
+# The login-node template allows `ls *`, `cat *`, `find *`, and friends. Those
+# globs match `ls /elsewhere`, and a bash allow is what actually ran after
+# external_directory denied Read. Deny the path-taking forms; listing the cwd
+# has no path argument and cannot leave the project. Subdirectories belong to
+# Glob/Read, which do honour external_directory.
+for pattern in (
+    "ls *",
+    "ls -R *",
+    "cat *",
+    "head *",
+    "tail *",
+    "wc *",
+    "find *",
+    "grep *",
+    "diff *",
+    "du *",
+):
+    put(pattern, "deny")
+for pattern in ("ls", "ls -l", "ls -la", "ls -lh", "ls -1", "ls -al", "ls -F", "ls ."):
+    put(pattern, "allow")
+
+# Any other command whose argument is an absolute path, a home path, or `..`.
+for pattern in ("* /*", "* ~", "* ~*", "* ~/*", "* ..", "* ../*", "* */..*"):
+    put(pattern, "deny")
+
+# Bash must not be a writable back door onto the same files.
+for name in POLICY_FILES:
+    put(f"* {name}", "deny")
+    put(f"* */{name}", "deny")
+
+# Denials are re-appended last so no overlay rule above can ever override them.
+for pattern in ("rm -rf *", "chown *", "dd *", "mkfs *", "kill -9 *",
+                "killall *", "reboot *", "shutdown *"):
+    put(pattern, "deny")
+
+with open(path, "w") as f:
+    json.dump(cfg, f, indent=2)
+    f.write("\n")
+PYEOF
+}
+
+# Claude Code's equivalent of the OpenCode overlay above. MCP tools are named
+# mcp__{server}__{tool}; `mcp__hpc__*` matches every tool from the bridge.
+apply_local_claude_permission_overlay() {
+  local settings="$1"
+  mkdir -p "$(dirname "$settings")"
+
+  python3 - "$settings" <<'PYEOF'
+import json, os, sys
+
+path = sys.argv[1]
+cfg = {}
+if os.path.exists(path):
+    with open(path) as handle:
+        loaded = json.load(handle)
+    if isinstance(loaded, dict):
+        cfg = loaded
+
+perms = cfg.setdefault("permissions", {})
+if not isinstance(perms, dict):
+    perms = {}
+    cfg["permissions"] = perms
+ask = perms.get("ask")
+if not isinstance(ask, list):
+    ask = []
+    perms["ask"] = ask
+rule = "mcp__hpc__*"
+if rule not in ask and "mcp__hpc" not in ask:
+    ask.append(rule)
+# File tools refuse paths outside the working directory instead of prompting.
+perms["blockReadsOutsideWorkingDirectories"] = True
+deny = perms.get("deny")
+if not isinstance(deny, list):
+    deny = []
+    perms["deny"] = deny
+for rule in (
+    "Bash(ls *)",
+    "Bash(cat *)",
+    "Bash(find *)",
+    "Bash(grep *)",
+    "Bash(* /*)",
+    "Bash(* ..)",
+    "Bash(* ../*)",
+    "Bash(* ~*)",
+    "Edit(opencode.json)",
+    "Write(opencode.json)",
+    "Edit(.hpc-assistant.json)",
+    "Write(.hpc-assistant.json)",
+    "Edit(AGENTS.md)",
+    "Write(AGENTS.md)",
+    "Edit(CLAUDE.md)",
+    "Write(CLAUDE.md)",
+    "Edit(.claude/settings.json)",
+    "Write(.claude/settings.json)",
+):
+    if rule not in deny:
+        deny.append(rule)
+
+with open(path, "w") as handle:
+    json.dump(cfg, handle, indent=2)
+    handle.write("\n")
+PYEOF
+}
+
+# The bridge is what makes the bounds in .hpc-assistant.json real rather than advisory,
+# so register it as an MCP server for whichever framework is in use. The config path is
+# passed explicitly: the server would find it by walking up from its working directory,
+# but which directory that is depends on how the agent was launched.
+# Builds an array rather than a string: install paths contain spaces often enough that
+# splitting a joined command line back apart is a bug waiting to happen.
+resolve_hpc_mcp_command() {
+  local project_dir="$1" config_path="$project_dir/.hpc-assistant.json"
+
+  if [[ -n "${HPC_MCP_COMMAND:-}" ]]; then
+    # An executable named in full is taken as one word, so a path containing a space
+    # works — which matters, because the interpreter of a managed virtualenv lands
+    # wherever the user keeps their files. Anything else is split on whitespace, which is
+    # what makes the multi-word `uvx --from DIR hpc-mcp` form expressible.
+    if [[ -x "$HPC_MCP_COMMAND" ]]; then
+      HPC_MCP_ARGV=("$HPC_MCP_COMMAND")
+    else
+      read -r -a HPC_MCP_ARGV <<< "$HPC_MCP_COMMAND"
+    fi
+  elif command -v hpc-mcp >/dev/null 2>&1; then
+    HPC_MCP_ARGV=(hpc-mcp)
+  elif command -v uvx >/dev/null 2>&1 && [[ -d "$HPC_MCP_DIR" ]]; then
+    HPC_MCP_ARGV=(uvx --from "$HPC_MCP_DIR" hpc-mcp)
+  else
+    HPC_MCP_ARGV=(hpc-mcp)
+    echo "  NOTE: hpc-mcp is not on PATH yet. The bridge is registered anyway;" >&2
+    echo "        install it with:  uv tool install '$HPC_MCP_DIR'" >&2
+    echo "        or:               pipx install '$HPC_MCP_DIR'" >&2
+  fi
+  HPC_MCP_ARGV+=(--config "$config_path")
+}
+
+register_hpc_mcp_server() {
+  local project_dir="$1" framework="${2:-opencode}" target
+  local HPC_MCP_ARGV=()
+
+  resolve_hpc_mcp_command "$project_dir"
+
+  case "$framework" in
+    claude-code) target="$project_dir/.mcp.json" ;;
+    *)           target="$project_dir/opencode.json" ;;
+  esac
+
+  if [[ "$framework" != "claude-code" && ! -f "$target" ]]; then
+    echo "  ERROR: opencode.json not found at $target" >&2
+    return 1
+  fi
+
+  python3 - "$target" "$framework" "${HPC_MCP_ARGV[@]}" <<'PYEOF'
+import json, os, sys
+
+path, framework = sys.argv[1], sys.argv[2]
+argv = sys.argv[3:]
+
+config = {}
+if os.path.exists(path):
+    with open(path) as handle:
+        config = json.load(handle)
+
+if framework == "claude-code":
+    servers = config.setdefault("mcpServers", {})
+    servers["hpc"] = {"command": argv[0], "args": argv[1:]}
+else:
+    # An existing knowledge-base server stays; this is an addition, not a replacement.
+    servers = config.setdefault("mcp", {})
+    if not isinstance(servers, dict):
+        servers = {}
+        config["mcp"] = servers
+    servers["hpc"] = {"type": "local", "command": argv, "enabled": True}
+
+with open(path, "w") as handle:
+    json.dump(config, handle, indent=2)
+    handle.write("\n")
+PYEOF
+}
+
+configure_local_project() {
+  local project_dir="$1"
+
+  echo "── Configuring local mode ──"
+  check_local_prerequisites "$REMOTE_HOST"
+  if [[ "$FILE_ACCESS_MODE" == "sshfs" ]]; then
+    check_sshfs_prerequisites "$SSHFS_MOUNTPOINT" "$LOCAL_ROOT"
+  fi
+
+  if _should_write_file "$project_dir/.hpc-assistant.json"; then
+    render_hpc_assistant_config "$project_dir/.hpc-assistant.json"
+    echo "  Wrote .hpc-assistant.json"
+  else
+    echo "  Skipping .hpc-assistant.json (already exists; use --force to overwrite)"
+  fi
+
+  if [[ "$FILE_ACCESS_MODE" != "sshfs" ]]; then
+    if _should_write_file "$project_dir/sync-to-remote.sh"; then
+      render_sync_script "$project_dir/sync-to-remote.sh"
+      echo "  Wrote sync-to-remote.sh"
+    else
+      echo "  Skipping sync-to-remote.sh (already exists; use --force to overwrite)"
+    fi
+  fi
+
+  local prompt_file
+  case "${AGENT_FRAMEWORK:-opencode}" in
+    claude-code) prompt_file="$project_dir/CLAUDE.md" ;;
+    *)           prompt_file="$project_dir/AGENTS.md" ;;
+  esac
+
+  if grep -q '^## Local Mode$' "$prompt_file" 2>/dev/null; then
+    echo "  Skipping local-mode section in $(basename "$prompt_file") (already present)"
+  else
+    append_local_mode_prompt "$prompt_file"
+    echo "  Appended local-mode section to $(basename "$prompt_file")"
+  fi
+
+  if [[ "${AGENT_FRAMEWORK:-opencode}" == "opencode" ]]; then
+    apply_local_permission_overlay "$project_dir/opencode.json" "$FILE_ACCESS_MODE"
+    echo "  Applied local-mode permission overlay to opencode.json"
+  elif [[ "${AGENT_FRAMEWORK:-opencode}" == "claude-code" ]]; then
+    apply_local_claude_permission_overlay "$project_dir/.claude/settings.json"
+    echo "  Applied local-mode permission overlay to .claude/settings.json"
+  fi
+
+  if register_hpc_mcp_server "$project_dir" "${AGENT_FRAMEWORK:-opencode}"; then
+    case "${AGENT_FRAMEWORK:-opencode}" in
+      claude-code) echo "  Registered the hpc-mcp bridge in .mcp.json" ;;
+      *)           echo "  Registered the hpc-mcp bridge in opencode.json" ;;
+    esac
+  fi
+
+  mkdir -p "$project_dir/.hpc-assistant"
+}
+
 save_module_init_config() {
   mkdir -p "$CONFIG_DIR"
+  LOCAL_MODE="${LOCAL_MODE:-false}"
   HPC_SITE="${HPC_SITE:-LUMI}"
   AGENT_FRAMEWORK="${AGENT_FRAMEWORK:-opencode}"
   INFERENCE_BACKEND="${INFERENCE_BACKEND:-aitta}"
   KB_BACKEND="${KB_BACKEND:-remote-mcp}"
-  GEAK_ENABLED="${GEAK_ENABLED:-false}"
   get_site_config "$HPC_SITE"
-  if [[ "${GEAK_ENABLED:-false}" == "true" ]] && [[ "$HPC_SITE" == "LUMI" ]]; then
-    SITE_SKILLS="$SITE_SKILLS $GEAK_SKILLS"
-  fi
   save_config
 }
 
@@ -634,201 +1187,4 @@ stop_services() {
   if is_instance_running "chroma-mcp"; then
     $CONTAINER_RT instance stop chroma-mcp && echo "  Stopped chroma-mcp."
   fi
-}
-
-# ── GEAK (Claude Code) installation ───────────────────────────────────────────
-# Copies the geak-monitor subagent, hooks, and runtime files into the project.
-# Skill directories themselves are copied by the regular skill loop in setup.sh
-# once GEAK_SKILLS is appended to SITE_SKILLS.
-install_geak_claude() {
-  local project_dir="${1:-$PROJECT_DIR}"
-  local agents_dir="$project_dir/.claude/agents"
-  local hooks_dir="$project_dir/.claude/hooks"
-
-  if [[ ! -d "$GEAK_DIR" ]]; then
-    echo "  ERROR: GEAK assets directory not found at $GEAK_DIR" >&2
-    return 1
-  fi
-
-  mkdir -p "$agents_dir" "$hooks_dir"
-
-  echo "  Installing geak-monitor subagent..."
-  cp "$GEAK_DIR/claude/agents/geak-monitor.md" "$agents_dir/geak-monitor.md"
-
-  echo "  Installing GEAK hooks..."
-  cp "$GEAK_DIR/claude/hooks/"*.sh "$hooks_dir/"
-  chmod +x "$hooks_dir/"*.sh
-
-  echo "  Copying GEAK runtime files to project root..."
-  for f in run-geak.sbatch setup-geak.sh commandment-config.yaml matmul_kernel.py; do
-    cp "$GEAK_DIR/$f" "$project_dir/$f"
-  done
-  chmod +x "$project_dir/run-geak.sbatch" "$project_dir/setup-geak.sh"
-  install_geak_download_notice_files "$project_dir"
-
-  if [[ -n "${GEAK_ANTHROPIC_API_KEY:-}" ]]; then
-    echo "  Writing $project_dir/.anthropic_api_key (mode 600)..."
-    umask 077
-    printf '%s' "$GEAK_ANTHROPIC_API_KEY" > "$project_dir/.anthropic_api_key"
-    chmod 600 "$project_dir/.anthropic_api_key"
-  fi
-}
-
-# Writes the full hook-aware .claude/settings.json (PreToolUse Bash/Edit/Agent
-# + SubagentStop matcher) used when GEAK is enabled. Overwrites the minimal
-# settings.json that setup.sh writes for plain Claude Code.
-write_geak_claude_settings() {
-  local project_dir="${1:-$PROJECT_DIR}"
-  cat > "$project_dir/.claude/settings.json" <<'SETTINGS_EOF'
-{
-  "env": {
-    "BASH_DEFAULT_TIMEOUT_MS": "1800000",
-    "BASH_MAX_TIMEOUT_MS": "7200000"
-  },
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/enforce-geak-bash.sh",
-            "timeout": 30000
-          }
-        ]
-      },
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/protect-scripts.sh",
-            "timeout": 30000
-          }
-        ]
-      },
-      {
-        "matcher": "Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/guard-monitor-spawn.sh",
-            "timeout": 30000
-          }
-        ]
-      }
-    ],
-    "SubagentStop": [
-      {
-        "matcher": "geak-monitor",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/cleanup-monitor.sh",
-            "timeout": 30000
-          }
-        ]
-      }
-    ]
-  }
-}
-SETTINGS_EOF
-}
-
-# ── GEAK (OpenCode) installation ───────────────────────────────────────────────
-# Copies the geak-monitor subagent and plugin into the project's .opencode/ tree.
-# Skill directories are copied by the regular skill loop in setup.sh.
-install_geak_opencode() {
-  local project_dir="${1:-$PROJECT_DIR}"
-  local agents_dir="$project_dir/.opencode/agents"
-  local plugins_dir="$project_dir/.opencode/plugins"
-
-  if [[ ! -d "$GEAK_DIR" ]]; then
-    echo "  ERROR: GEAK assets directory not found at $GEAK_DIR" >&2
-    return 1
-  fi
-
-  mkdir -p "$agents_dir" "$plugins_dir"
-
-  echo "  Installing geak-monitor subagent..."
-  cp "$GEAK_DIR/opencode/agents/geak-monitor.md" "$agents_dir/geak-monitor.md"
-
-  echo "  Installing GEAK plugin..."
-  # Only the TypeScript source is deployed. No bun install needed:
-  # - OpenCode loads local file plugins using its own embedded Bun runtime.
-  # - `import type { Plugin }` is a type-only import erased at load time.
-  # - npm packages listed in opencode.json use @npmcli/arborist internally,
-  #   not a system bun binary.
-  cp "$GEAK_DIR/opencode/plugins/geak-guards.ts" "$plugins_dir/geak-guards.ts"
-
-  echo "  Copying GEAK runtime files to project root..."
-  for f in run-geak.sbatch setup-geak.sh commandment-config.yaml matmul_kernel.py; do
-    cp "$GEAK_DIR/$f" "$project_dir/$f"
-  done
-  chmod +x "$project_dir/run-geak.sbatch" "$project_dir/setup-geak.sh"
-  install_geak_download_notice_files "$project_dir"
-
-  if [[ -n "${GEAK_ANTHROPIC_API_KEY:-}" ]]; then
-    echo "  Writing $project_dir/.anthropic_api_key (mode 600)..."
-    umask 077
-    printf '%s' "$GEAK_ANTHROPIC_API_KEY" > "$project_dir/.anthropic_api_key"
-    chmod 600 "$project_dir/.anthropic_api_key"
-  fi
-}
-
-# Adds the GEAK plugin to opencode.json by injecting a "plugin" key.
-# Reads the existing opencode.json, injects the plugin entry, and writes it back.
-write_geak_opencode_config() {
-  local project_dir="${1:-$PROJECT_DIR}"
-  local oc_config="$project_dir/opencode.json"
-
-  if [[ ! -f "$oc_config" ]]; then
-    echo "  ERROR: opencode.json not found at $oc_config" >&2
-    return 1
-  fi
-
-  # Inject "plugin": [".opencode/plugins/geak-guards.ts"] into opencode.json.
-  # Uses Python (available on LUMI) to parse and rewrite JSON cleanly.
-  python3 - "$oc_config" <<'PYEOF'
-import json, sys
-path = sys.argv[1]
-with open(path) as f:
-    cfg = json.load(f)
-plugins = cfg.get("plugin", [])
-entry = ".opencode/plugins/geak-guards.ts"
-if entry not in plugins:
-    plugins.append(entry)
-cfg["plugin"] = plugins
-with open(path, "w") as f:
-    json.dump(cfg, f, indent=2)
-    f.write("\n")
-PYEOF
-  echo "  Added geak-guards.ts to opencode.json plugin list"
-}
-
-# Install GEAK hooks, agents, runtime files, and framework-specific wiring into
-# project_dir (same steps as setup.sh when GEAK_ENABLED=true).
-install_geak_into_project() {
-  local project_dir="${1:?install_geak_into_project: project_dir required}"
-
-  if [[ "${GEAK_ENABLED:-false}" != "true" ]]; then
-    return 0
-  fi
-
-  echo "── Installing GEAK kernel-optimization integration ──"
-  case "${AGENT_FRAMEWORK:-}" in
-    claude-code)
-      install_geak_claude "$project_dir"
-      write_geak_claude_settings "$project_dir"
-      echo "  Updated .claude/settings.json (with GEAK hooks)"
-      ;;
-    opencode)
-      install_geak_opencode "$project_dir"
-      write_geak_opencode_config "$project_dir"
-      echo "  GEAK plugin registered in opencode.json"
-      ;;
-    *)
-      echo "  WARNING: GEAK requires claude-code or opencode; skipping." >&2
-      ;;
-  esac
 }

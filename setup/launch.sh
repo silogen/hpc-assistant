@@ -39,23 +39,6 @@ if uses_litellm_proxy && [[ -n "${AITTA_PROXY_SIF:-}" ]] && [[ -f "$AITTA_PROXY_
   save_config
 fi
 
-# ── GEAK sanity check ────────────────────────────────────────────────────────
-if [[ "${GEAK_ENABLED:-false}" == "true" ]]; then
-  if [[ ! -f "$PROJECT_DIR/.anthropic_api_key" ]]; then
-    if [[ -n "${GEAK_ANTHROPIC_API_KEY:-}" ]]; then
-      echo "  Restoring .anthropic_api_key from credentials store..."
-      umask 077
-      printf '%s' "$GEAK_ANTHROPIC_API_KEY" > "$PROJECT_DIR/.anthropic_api_key"
-      chmod 600 "$PROJECT_DIR/.anthropic_api_key"
-    else
-      echo "  WARNING: GEAK is enabled but $PROJECT_DIR/.anthropic_api_key is missing" >&2
-      echo "  and no key was found in credentials. Re-run setup.sh to provide it." >&2
-    fi
-  fi
-
-  echo "  GEAK: enabled (SLURM jobs use lumi-multitorch + setup-geak.sh)"
-fi
-
 echo ""
 
 # ── Launch agent ─────────────────────────────────────────────────────────────
@@ -113,11 +96,11 @@ elif [[ "$AGENT_FRAMEWORK" == "opencode" ]]; then
 
   cd "$PROJECT_DIR"
   # Background subagents require OpenCode >= 1.14.51. On older versions the flag
-  # is silently ignored and geak-monitor will block the primary session.
+  # is silently ignored and such jobs block the primary session.
   OC_VERSION=$(opencode --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1 || echo "unknown")
   echo "  OpenCode version: $OC_VERSION"
   echo "  NOTE: background subagents (non-blocking monitor) require OpenCode >= 1.14.51."
-  echo "        On older versions geak-monitor blocks the primary session until the job completes."
+  echo "        On older versions such job blocks the primary session until the job completes."
 
   case "$INFERENCE_BACKEND" in
     aitta)
@@ -155,7 +138,7 @@ else
   fi
   echo ""
   echo "Skills directory: $SKILLS_DIR"
-  echo "Installed skills: $SITE_SKILLS"
+  echo "Installed skills: $SITE_SKILLS ${ENABLED_OPTIONAL_SKILLS:-}"
   echo ""
   echo "Configure your agent to use these services."
 fi
