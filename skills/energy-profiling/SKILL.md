@@ -1,6 +1,6 @@
 ---
 name: energy-profiling
-description: Use when profiling GPU job energy or power consumption on AMD systems with Omnistat. Handles Omnistat/VictoriaMetrics setup, Slurm job instrumentation, report-card interpretation, and troubleshooting. Do NOT use for rocprofv3 kernel/API performance profiling.
+description: Use when profiling GPU job energy or power consumption on AMD systems with Omnistat. Handles Omnistat/VictoriaMetrics setup, Slurm job instrumentation, report-card interpretation, and troubleshooting. Covers LUMI and Frontier. Do NOT use for rocprofv3 kernel/API performance profiling.
 ---
 
 # Energy profiling with Omnistat
@@ -9,14 +9,14 @@ description: Use when profiling GPU job energy or power consumption on AMD syste
 
 This is distinct from the `profiling` skill: `rocprofv3` profiles **kernel/API performance** (what runs fast), while Omnistat measures **energy and power over a job's lifetime** (what costs energy). Use `rocprofv3` to optimize kernels; use Omnistat to quantify and compare the energy cost of whole jobs and configurations.
 
-See references for details on energy profiling in specific environments, e.g. LUMI.
+See references for details on energy profiling in specific environments: [references/omnistat-lumi.md](references/omnistat-lumi.md) (LUMI) and [references/omnistat-frontier.md](references/omnistat-frontier.md) (Frontier).
 
 ## General setup
 
 For general Omnistat setup follow the steps below.
-For site-specific (e.g. LUMI) details, see the respective references.
+For site-specific (e.g. LUMI, Frontier) details, see the respective references.
 
-Note that some systems may already have Omnistat installed and available.
+Note that some systems may already have Omnistat installed and available. On Frontier, use the preinstalled `omnistat-wrapper` module instead of the steps below.
 
 ### 1. Create the install directory
 
@@ -117,7 +117,7 @@ GPU Statistics:
 ```
 
 How to interpret:
-- **One row per GCD** (8 rows on a full MI250X node). Sum the `Energy (kWh)` column across GPUs (and nodes) for total job energy.
+- **One row per GCD** (8 rows on a full MI250X node). Sum the `Energy (kWh)` column across GPUs (and nodes) for total job energy. On Frontier, power and energy may be reported per MI250X package rather than per GCD; see [references/omnistat-frontier.md](references/omnistat-frontier.md) before summing.
 - **Energy (kWh) Total** is the headline number for efficiency comparisons — normalize by useful work (e.g. samples or tokens) to get Wh/sample.
 - **Utilization Mean** near 100% = compute-bound; low mean over a long job = idle/loading time wasting energy (a key optimization target — loading and idle often dominate total job energy).
 
@@ -138,3 +138,4 @@ The archived VictoriaMetrics database is at `/<OUTPUTDIR>/data_prom_<JOBID>/`. U
 - [Omnistat (ROCm) — GitHub](https://github.com/ROCm/omnistat) — source, config reference, and the "Exploring results locally" Grafana workflow
 - [VictoriaMetrics releases](https://github.com/VictoriaMetrics/VictoriaMetrics/releases) — pick a plain `vX.Y.Z` (community) build
 - Complete Omnistat on LUMI step-by-step procedure: [references/omnistat-lumi.md](references/omnistat-lumi.md)
+- Omnistat on Frontier (module, storage, MI250X energy accounting, helper scripts): [references/omnistat-frontier.md](references/omnistat-frontier.md)

@@ -21,23 +21,32 @@ echo "Press Enter to accept defaults shown in [brackets]."
 echo ""
 
 # ── 1. Prerequisites ──────────────────────────────────────────────────────────
+# A container runtime is only needed for local-chroma or the LiteLLM proxy;
+# it is detected later, once those choices are known.
 
-detect_container_runtime
-echo "Container runtime: $CONTAINER_RT"
-echo ""
+command -v python3 >/dev/null || { echo "ERROR: Python 3 is required." >&2; exit 1; }
 
 # ── 2. HPC site selection ────────────────────────────────────────────────────
 
 select_hpc_site
+PROJECT_TARGET="$PROJECT_DIR"
 echo ""
 
 # ── 3. Quick-start defaults ──────────────────────────────────────────────────
 
 echo "Default settings for ${HPC_SITE}:"
-echo "  Knowledge base : LUMI AI Factory remote MCP (lumi-aif)"
-echo "  Inference      : Aitta"
-echo "    API base URL : https://aitta-api.csc.fi/openai/v1"
-echo "    Model        : openai/gpt-oss-120b"
+case "$HPC_SITE" in
+  LUMI)
+    echo "  Knowledge base : LUMI AI Factory remote MCP (lumi-aif)"
+    echo "  Inference      : Aitta"
+    echo "    API base URL : https://aitta-api.csc.fi/openai/v1"
+    echo "    Model        : openai/gpt-oss-120b"
+    ;;
+  FRONTIER)
+    echo "  Knowledge base : Frontier documentation files (OLCF guide downloaded to .hpc-assistant/docs/frontier/)"
+    echo "  Inference      : agent-native (your agent's existing login/provider)"
+    ;;
+esac
 echo ""
 read -rp "Use these defaults? [Y/n]: " choice
 case "$choice" in
@@ -52,7 +61,7 @@ echo ""
 if [[ "${SITE_HAS_REMOTE_MCP:-false}" == "true" ]]; then
   KB_BACKEND="remote-mcp"
 elif [[ "$USE_DEFAULTS" == "true" ]]; then
-  KB_BACKEND="remote-mcp"
+  KB_BACKEND="$SITE_DEFAULT_KB"
 else
   select_knowledge_base
   echo ""
@@ -61,12 +70,14 @@ fi
 # ── 5. Inference backend ─────────────────────────────────────────────────────
 
 if [[ "$USE_DEFAULTS" == "true" ]]; then
-  INFERENCE_BACKEND="aitta"
-  AITTA_API_BASE="https://aitta-api.csc.fi/openai/v1"
-  TARGET_MODEL="openai/gpt-oss-120b"
-  PROXY_PORT="8001"
-  read_secret "Aitta API token: " AITTA_TOKEN
-  echo ""
+  INFERENCE_BACKEND="$SITE_DEFAULT_INFERENCE"
+  if [[ "$INFERENCE_BACKEND" == "aitta" ]]; then
+    AITTA_API_BASE="https://aitta-api.csc.fi/openai/v1"
+    TARGET_MODEL="openai/gpt-oss-120b"
+    PROXY_PORT="8001"
+    read_secret "Aitta API token: " AITTA_TOKEN
+    echo ""
+  fi
 else
   select_inference_backend
   echo ""
@@ -125,47 +136,30 @@ echo "── Container images (SIF files) ──"
 echo "Build instructions are in the README. Provide paths to pre-built SIF files."
 echo ""
 
-if [[ "$USE_DEFAULTS" == "true" ]]; then
-  # With defaults: remote-mcp + aitta. Proxy only needed for claude-code.
-  if [[ "$AGENT_FRAMEWORK" != "opencode" ]]; then
-    read -rp "Path to aitta-proxy.sif [$DEFAULT_SIF_DIR/aitta-proxy.sif]: " INPUT
-    AITTA_PROXY_SIF="${INPUT:-$DEFAULT_SIF_DIR/aitta-proxy.sif}"
-  else
-    AITTA_PROXY_SIF=""
-  fi
-  BUILD_DB_SIF=""
-  CHROMA_MCP_SIF=""
-  CHROMA_DATA_DIR=""
-  DOCS_DIR=""
-else
-  if uses_litellm_proxy; then
-    read -rp "Path to aitta-proxy.sif [$DEFAULT_SIF_DIR/aitta-proxy.sif]: " INPUT
-    AITTA_PROXY_SIF="${INPUT:-$DEFAULT_SIF_DIR/aitta-proxy.sif}"
-  else
-    AITTA_PROXY_SIF=""
-  fi
-
-  if [[ "$KB_BACKEND" == "local-chroma" ]]; then
-    read -rp "Path to build-db.sif [$DEFAULT_SIF_DIR/build-db.sif]: " INPUT
-    BUILD_DB_SIF="${INPUT:-$DEFAULT_SIF_DIR/build-db.sif}"
-
-    read -rp "Path to chroma-mcp.sif [$DEFAULT_SIF_DIR/chroma-mcp.sif]: " INPUT
-    CHROMA_MCP_SIF="${INPUT:-$DEFAULT_SIF_DIR/chroma-mcp.sif}"
-
-    echo ""
-    echo "── Data directories ──"
-
-    read -rp "Path for chroma database [$DEFAULT_CHROMA_DATA_DIR]: " INPUT
-    CHROMA_DATA_DIR="${INPUT:-$DEFAULT_CHROMA_DATA_DIR}"
-
-    read -rp "Path for documentation clone [$DEFAULT_DOCS_DIR]: " INPUT
-    DOCS_DIR="${INPUT:-$DEFAULT_DOCS_DIR}"
-  else
-    BUILD_DB_SIF=""
-    CHROMA_MCP_SIF=""
-    CHROMA_DATA_DIR=""
-    DOCS_DIR=""
-  fi
+if [[ "$KB_BACKEND" == "local-chroma" ]] || uses_litellm_proxy; then
+  detect_container_runtime
+  echo "Container runtime: $CONTAINER_RT"
+fi
+AITTA_PROXY_SIF=""
+BUILD_DB_SIF=""
+CHROMA_MCP_SIF=""
+CHROMA_DATA_DIR=""
+DOCS_DIR=""
+if uses_litellm_proxy; then
+  read -rp "Path to aitta-proxy.sif [$DEFAULT_SIF_DIR/aitta-proxy.sif]: " INPUT
+  AITTA_PROXY_SIF="${INPUT:-$DEFAULT_SIF_DIR/aitta-proxy.sif}"
+  [[ -f "$AITTA_PROXY_SIF" ]] || { echo "ERROR: Proxy image missing: $AITTA_PROXY_SIF" >&2; exit 1; }
+fi
+if [[ "$KB_BACKEND" == "local-chroma" ]]; then
+  read -rp "Path to build-db.sif [$DEFAULT_SIF_DIR/build-db.sif]: " INPUT
+  BUILD_DB_SIF="${INPUT:-$DEFAULT_SIF_DIR/build-db.sif}"
+  read -rp "Path to chroma-mcp.sif [$DEFAULT_SIF_DIR/chroma-mcp.sif]: " INPUT
+  CHROMA_MCP_SIF="${INPUT:-$DEFAULT_SIF_DIR/chroma-mcp.sif}"
+  [[ -f "$BUILD_DB_SIF" && -f "$CHROMA_MCP_SIF" ]] || { echo "ERROR: Chroma build/service images missing." >&2; exit 1; }
+  read -rp "Path for chroma database [$DEFAULT_CHROMA_DATA_DIR]: " INPUT
+  CHROMA_DATA_DIR="${INPUT:-$DEFAULT_CHROMA_DATA_DIR}"
+  read -rp "Path for documentation clone [$DEFAULT_DOCS_DIR]: " INPUT
+  DOCS_DIR="${INPUT:-$DEFAULT_DOCS_DIR}"
 fi
 echo ""
 
@@ -179,6 +173,8 @@ if [[ "$KB_BACKEND" == "remote-mcp" ]]; then
   echo "  URL  : $SITE_REMOTE_MCP_URL"
   echo "  Tool : $SITE_REMOTE_MCP_TOOL"
   echo "Skipping local docs clone, build-db, and chroma-mcp instance."
+elif [[ "$KB_BACKEND" == "docs-files" ]]; then
+  echo "Using documentation files from docs/$SITE_DOCS_BUNDLE/ (third-party files downloaded per sources.tsv); no clone, index or MCP server required."
 else
   DOCS_SOURCE_DIR="$DOCS_DIR"
   if [[ -n "$SITE_DOCS_SUBPATH" ]]; then
@@ -190,6 +186,7 @@ else
     git clone "$SITE_DOCS_REPO" "$DOCS_DIR"
   fi
 
+  python3 "$SCRIPT_DIR/build_db.py" "$DOCS_SOURCE_DIR" "$SITE_DOCS_GLOB" "$CHROMA_DATA_DIR" --file-type "$SITE_DOCS_FILE_TYPE" --validate-only
   mkdir -p "$CHROMA_DATA_DIR"
 
   if [[ -d "$DOCS_SOURCE_DIR" ]] && [[ -f "$BUILD_DB_SIF" ]]; then
@@ -209,10 +206,11 @@ else
       COLLECTION="${INPUT:-$SITE_COLLECTION}"
     fi
 
-    $CONTAINER_RT run \
+    $CONTAINER_RT exec \
+      --bind "$SCRIPT_DIR/build_db.py:/workspace/build_db.py:ro" \
       --bind "$DOCS_SOURCE_DIR:$CONTAINER_DOCS_MOUNT" \
       --bind "$CHROMA_DATA_DIR:$CONTAINER_CHROMA_MOUNT" \
-      "$BUILD_DB_SIF" \
+      "$BUILD_DB_SIF" python /workspace/build_db.py \
       "$CONTAINER_DOCS_MOUNT" "$DOC_GLOB" "$CONTAINER_CHROMA_MOUNT" \
       --file-type "$DOC_FILE_TYPE" --collection "$COLLECTION" \
       --chunk-size 1000 --chunk-overlap 200 --batch-size 200
@@ -280,16 +278,20 @@ elif [[ "$AGENT_FRAMEWORK" == "opencode" ]]; then
 else
   echo "Generic agent framework selected."
   echo "Skills are available in: $SKILLS_DIR"
-  echo "Configure your agent to use the chroma MCP and skills directory as needed."
+  configure_generic_project "$PROJECT_DIR"
 fi
 echo ""
 
 # ── 11. Save configuration ───────────────────────────────────────────────────
 
-save_credentials
+if [[ "$INFERENCE_BACKEND" != "agent-native" || "$GEAK_ENABLED" == "true" ]]; then
+  save_credentials
+fi
 save_config
 echo "Configuration saved to $CONFIG_FILE"
-echo "Credentials saved to $CREDENTIALS_FILE (mode 600)"
+if [[ "$INFERENCE_BACKEND" != "agent-native" || "$GEAK_ENABLED" == "true" ]]; then
+  echo "Credentials saved to $CREDENTIALS_FILE (mode 600)"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
@@ -302,6 +304,8 @@ echo "  HPC site        : $HPC_SITE"
 echo "  Knowledge base  : $KB_BACKEND"
 if [[ "$KB_BACKEND" == "remote-mcp" ]]; then
   echo "                    $SITE_REMOTE_MCP_NAME -> $SITE_REMOTE_MCP_URL"
+elif [[ "$KB_BACKEND" == "docs-files" ]]; then
+  echo "                    .hpc-assistant/docs/$SITE_DOCS_BUNDLE/"
 else
   echo "                    chroma data: $CHROMA_DATA_DIR"
 fi

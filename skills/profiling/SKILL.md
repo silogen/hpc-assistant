@@ -1,6 +1,6 @@
 ---
 name: profiling
-description: Profiles HIP/ROCm applications on AMD GPUs using rocprofv3. Covers application tracing (HIP, HSA, kernel, memory), kernel counter collection (--pmc), and Perfetto visualization. Use when the user asks about profiling AMD GPUs, rocprofv3, ROCm profiling, kernel tracing, GPU performance counters, profiling a Python GPU script, Singularity, Apptainer, SLURM job profiling, or LUMI.
+description: Profiles HIP/ROCm applications on AMD GPUs using rocprofv3. Covers application tracing (HIP, HSA, kernel, memory), kernel counter collection (--pmc), and Perfetto visualization. Use when the user asks about profiling AMD GPUs, rocprofv3, ROCm profiling, kernel tracing, GPU performance counters, profiling a Python GPU script, Singularity, Apptainer, SLURM job profiling, LUMI, or Frontier.
 ---
 
 # ROCm profiling with rocprofv3
@@ -9,12 +9,12 @@ description: Profiles HIP/ROCm applications on AMD GPUs using rocprofv3. Covers 
 
 ## When to Use This Skill
 
-- Profiling HIP or ROCm applications on AMD GPUs (e.g. LUMI-G MI250x)
+- Profiling HIP or ROCm applications on AMD GPUs (e.g. LUMI-G MI250x, Frontier MI250X)
 - Tracing API calls, kernel dispatches, or memory operations
 - Collecting GPU performance counters (PMCs) for specific kernels
 - Generating Perfetto or CSV traces for analysis
 - Attaching to a running process to profile it dynamically
-- Profiling GPU workloads run via Python, Singularity/Apptainer, or SLURM (e.g. on LUMI)
+- Profiling GPU workloads run via Python, Singularity/Apptainer, or SLURM (e.g. on LUMI or Frontier)
 
 ## Example patterns
 
@@ -199,6 +199,11 @@ When profiling inside a batch or interactive job. Use `-d` and `-o` with `%j` so
 ```bash
 srun rocprofv3 --runtime-trace -S --output-format csv -d ./prof_%j -o prof_%j -- ./my_gpu_app
 ```
+
+## Site-specific notes
+
+- **LUMI:** the scenario examples above and in [references/examples.md](references/examples.md) use LUMI partitions, bind paths and the `select_gpu` wrapper.
+- **Frontier:** module selection, the ROCm 6.2 legacy `rocprof` issue, GCD binding, per-rank output paths, Apptainer and a full-node job example are in [references/frontier.md](references/frontier.md).
 
 ## Resources
 
