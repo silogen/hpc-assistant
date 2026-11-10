@@ -336,9 +336,9 @@ echo ""
 # that never sourced a shell profile.
 export HPC_MCP_COMMAND="$HPC_MCP_BIN"
 if [[ ${#INIT_ARGS[@]} -gt 0 ]]; then
-  "$HPC_ASSISTANT_ROOT/bin/hpc-assistant-init" --local "${INIT_ARGS[@]}"
+  "$HPC_ASSISTANT_ROOT/scripts/hpc-assistant-init" --local "${INIT_ARGS[@]}"
 else
-  "$HPC_ASSISTANT_ROOT/bin/hpc-assistant-init" --local
+  "$HPC_ASSISTANT_ROOT/scripts/hpc-assistant-init" --local
 fi
 
 run_check() {

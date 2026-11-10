@@ -1,5 +1,5 @@
 ---
-name: lumi-management
+name: lumi-resource-management
 description: Check LUMI project quotas and allocations using lumi-workspaces, lumi-quota, lumi-allocations, lumi-check-quota, lumi-ldap-userinfo, and lumi-ldap-projectinfo. Use when the user asks about quota, billing units, allocations, or project/user info on LUMI.
 ---
 

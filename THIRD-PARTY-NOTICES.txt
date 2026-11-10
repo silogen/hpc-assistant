@@ -67,7 +67,7 @@ License: Apache-2.0
 ---
 
 hpc-mcp local-mode virtualenv — Python dependencies
-Installed on the user's machine by bin/hpc-assistant-local-setup into
+Installed on the user's machine by scripts/hpc-assistant-local-setup into
 ~/.local/share/hpc-assistant/venv (not a container). Versions are pinned in
 hpc-mcp/requirements.txt. The AMD-authored hpc-mcp package itself is
 MIT; see LICENSE.

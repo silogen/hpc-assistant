@@ -30,7 +30,7 @@ those checks out of reach, such as `bash -c`.
 ## Install
 
 Not published to PyPI yet, so install from the clone. Usually you do not install it
-directly: `bin/hpc-assistant-local-setup` puts it in a virtualenv of its own and registers
+directly: `scripts/hpc-assistant-local-setup` puts it in a virtualenv of its own and registers
 it in your agent config by absolute path. To install it yourself instead:
 
 ```bash

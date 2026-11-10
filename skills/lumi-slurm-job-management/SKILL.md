@@ -1,5 +1,5 @@
 ---
-name: slurm
+name: lumi-slurm-job-management
 description: Submits and manages jobs on LUMI via Slurm (sbatch, srun, squeue, scancel, sinfo). Covers project account, partitions, LUMI-G (AMD MI250x, 8 GPUs/node), Singularity/Apptainer, and Python and PyTorch jobs. Use when the user mentions LUMI, Slurm, partitions, project account, LUMI-G, MI250x, container jobs, or Python jobs on LUMI.
 ---
 

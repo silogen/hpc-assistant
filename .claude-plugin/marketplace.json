@@ -1,0 +1,35 @@
+{
+  "name": "hpc-assistant",
+  "owner": {
+    "name": "AMD"
+  },
+  "metadata": {
+    "description": "HPC Assistant plugin marketplace: install only the agent skills, without the setup/MCP infrastructure.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "hpc-assistant-skills",
+      "source": "./",
+      "version": "0.1.0",
+      "description": "Agent skills for HPC systems with AMD GPUs: Slurm job submission and containers, project quotas and billing units, rocprofv3 GPU profiling, Omnistat energy profiling, and the GEAK kernel optimizer.",
+      "author": {
+        "name": "AMD"
+      },
+      "homepage": "https://github.com/silogen/hpc-assistant",
+      "repository": "https://github.com/silogen/hpc-assistant",
+      "license": "MIT",
+      "keywords": [
+        "amd",
+        "rocm",
+        "hpc",
+        "slurm",
+        "rocprofv3",
+        "omnistat",
+        "geak",
+        "instinct"
+      ],
+      "category": "Developer Tools"
+    }
+  ]
+}

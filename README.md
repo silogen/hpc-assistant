@@ -26,9 +26,10 @@ Layout at a glance:
 
 ```text
 hpc-assistant/
-├── skills/                  # Agent skills (copied into your project by setup)
+├── skills/                  # Agent skills (copied into your project by setup, or installed as a plugin)
+├── .claude-plugin/, .codex-plugin/, .cursor-plugin/, .agents/plugins/  # Plugin + marketplace manifests (skills-only install)
 ├── setup/                   # setup.sh, teardown.sh, launch.sh, config.sh, build_db.py, templates/, dockerfiles/, requirements/
-├── bin/hpc-assistant-init     # Project init (with module load)
+├── scripts/hpc-assistant-init # Project init (with module load)
 ├── modulefiles/hpc-assistant/ # Lmod module for site installs
 ├── hpc-mcp/                 # MCP bridge: bounded cluster tools over your own SSH connection
 ├── LOCAL-MODE.md              # Running the agent on your own machine
@@ -43,6 +44,41 @@ hpc-assistant/
 - OpenCode: `.opencode/skills/`, `opencode.json`, `AGENTS.md`
 - Claude Code: `.claude/skills/`, `CLAUDE.md`
 - Local mode: `.hpc-assistant.json` — the policy boundary (remote host, project root, and the bounds the assistant honours)
+
+## Install Only the Skills
+
+If you only want the agent skills — no containers, knowledge base, MCP bridge or inference proxy — install them with the [`skills` CLI](https://github.com/vercel-labs/skills) via `npx`. No clone or manual copying required.
+
+```bash
+npx skills add silogen/hpc-assistant
+```
+
+This prompts you to pick skills and an install destination. To install a specific skill into specific agents, pass `--skill` and one or more `--agent` flags (e.g. `claude-code`, `opencode`, `cursor`, `codex`):
+
+```bash
+npx skills add silogen/hpc-assistant --skill profiling --agent opencode
+```
+
+Browse everything available before installing:
+
+```bash
+npx skills add silogen/hpc-assistant --list
+```
+
+`npx` requires [Node.js](https://nodejs.org). Prefer to do it by hand? Copy the folders from `skills/` as in [Install skills](#3-install-skills).
+
+`geak-optimization` is included. Its description restricts it to requests that explicitly name GEAK, and like the setup scripts it only installs markdown, not the GEAK Python package.
+
+### As an agent plugin
+
+This repository is also a plugin marketplace (`hpc-assistant`) with one plugin, `hpc-assistant-skills`, containing all the skills. In Claude Code:
+
+```text
+/plugin marketplace add silogen/hpc-assistant
+/plugin install hpc-assistant-skills@hpc-assistant
+```
+
+Codex and Cursor can add the same repository as a plugin marketplace. Claude Code caches the whole repository when it installs the plugin; only `skills/` is loaded as agent content.
 
 ## Prerequisites
 
@@ -120,7 +156,7 @@ ssh lumi true && ssh -O check lumi
 # 2. In a local clone of your project. This installs the bridge that gives the agent
 #    its cluster tools, configures the project, and checks the connection.
 cd ~/projects/myapp
-$HOME/hpc-assistant/bin/hpc-assistant-local-setup \
+$HOME/hpc-assistant/scripts/hpc-assistant-local-setup \
   --remote-host lumi \
   --remote-root /scratch/project_465000000/myuser/myapp \
   --account project_465000000

@@ -19,13 +19,13 @@
 -- file path or the module directory path).
 local function find_repo_root(modpath)
     local root = modpath:match("^(.-)/modulefiles")
-    if root and isFile(pathJoin(root, "bin/hpc-assistant-init")) then
+    if root and isFile(pathJoin(root, "scripts/hpc-assistant-init")) then
         return root
     end
 
     local p = modpath
     for _ = 1, 6 do
-        if isFile(pathJoin(p, "bin/hpc-assistant-init")) then
+        if isFile(pathJoin(p, "scripts/hpc-assistant-init")) then
             return p
         end
         p = dirname(p)
@@ -37,7 +37,7 @@ end
 local repo_root = find_repo_root(myFileName())
 if not repo_root then
     LmodError(
-        "HPC Assistant: cannot find install root (expected bin/hpc-assistant-init). "
+        "HPC Assistant: cannot find install root (expected scripts/hpc-assistant-init). "
             .. "Modulefile location: "
             .. myFileName()
     )
@@ -50,7 +50,7 @@ MCP knowledge base.
 
 This module sets:
   HPC_ASSISTANT_ROOT                           Install root (skills, setup templates, init script)
-  PATH                                         Adds bin/ (hpc-assistant-init)
+  PATH                                         Adds scripts/ (hpc-assistant-init)
   OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS   true (same as setup/launch.sh for OpenCode;
                                                 enables non-blocking background subagents; requires OpenCode >= 1.14.51)
 
@@ -77,7 +77,7 @@ More information:
 ]])
 
 setenv("HPC_ASSISTANT_ROOT", repo_root)
-prepend_path("PATH", pathJoin(repo_root, "bin"))
+prepend_path("PATH", pathJoin(repo_root, "scripts"))
 
 -- Match setup/launch.sh when starting OpenCode: background subagents.
 -- On OpenCode < 1.14.51 the flag is ignored; see launch.sh comments.

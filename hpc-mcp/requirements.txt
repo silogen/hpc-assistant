@@ -1,5 +1,5 @@
 # Pinned install graph for the hpc-mcp local-mode virtualenv.
-# Used by bin/hpc-assistant-local-setup (and for a reproducible pip install -e).
+# Used by scripts/hpc-assistant-local-setup (and for a reproducible pip install -e).
 #
 # Direct declared dependency is mcp==2.0.0 in pyproject.toml.
 # Everything else is a transitive pin of that graph, captured from a working

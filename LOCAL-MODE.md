@@ -84,7 +84,7 @@ local clone of the project you want help with:
 git clone <your-project> ~/projects/myapp
 cd ~/projects/myapp
 
-~/projects/hpc-assistant/bin/hpc-assistant-local-setup \
+~/projects/hpc-assistant/scripts/hpc-assistant-local-setup \
   --remote-host lumi \
   --remote-root /scratch/project_465000000/myuser/myapp \
   --account project_465000000
