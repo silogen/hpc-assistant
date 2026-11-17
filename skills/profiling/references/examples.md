@@ -99,11 +99,11 @@ Output goes to `./prof_<jobid>/` with files prefixed by `prof_<jobid>`. Summary 
 
 ### Multi-GPU / full-node MPI job
 
-For full-node GPU jobs with one rank per GPU, use the same `select_gpu` wrapper and CPU binding as in the Slurm skill ([references/examples.md](../slurm/references/examples.md)). Run rocprofv3 inside that wrapper so each rank is profiled:
+For full-node GPU jobs with one rank per GPU, use the same `select_gpu` wrapper and CPU binding as in the Slurm skill ([references/examples.md](../../lumi-slurm-job-management/references/examples.md)). Run rocprofv3 inside that wrapper so each rank is profiled:
 
 ```bash
 srun --cpu-bind=${CPU_BIND} ./select_gpu rocprofv3 --runtime-trace -S -d ./prof_%j_%r -o prof_%j_%r -- ./my_mpi_gpu_app
 ```
 
-Here `%r` can be used if your environment sets a rank identifier; otherwise use distinct output dirs per rank (e.g. `-d ./prof_%j/rank_${SLURM_PROCID}`) to avoid overwriting. For the exact `select_gpu` and `CPU_BIND` setup, see [../../slurm/references/examples.md](../../slurm/references/examples.md).
+Here `%r` can be used if your environment sets a rank identifier; otherwise use distinct output dirs per rank (e.g. `-d ./prof_%j/rank_${SLURM_PROCID}`) to avoid overwriting. For the exact `select_gpu` and `CPU_BIND` setup, see [lumi-slurm-job-management/references/examples.md](../../lumi-slurm-job-management/references/examples.md).
 
