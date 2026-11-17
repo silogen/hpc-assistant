@@ -1,6 +1,6 @@
 # Running GEAK on LUMI
 
-LUMI-G nodes use AMD MI250x GPUs (8 GCDs per node, gfx942 / CDNA2). Jobs run via Slurm.
+LUMI-G nodes use AMD MI250x GPUs (8 GCDs per node, gfx90a / CDNA2). Jobs run via Slurm.
 Containers use Singularity/Apptainer. The LUMI AI Factory provides curated ROCm + PyTorch
 container images with Triton pre-installed.
 
