@@ -95,7 +95,7 @@ Look for `lumi-multitorch-full-*`. The path changes with each release; always ve
 submitting. Example path (update to current):
 
 ```
-/appl/local/laifs/containers/lumi-multitorch-u24r64f21m43t29-20260124_092648/lumi-multitorch-full-u24r64f21m43t29-20260124_092648.sif
+/appl/local/laifs/containers/lumi-multitorch-u24r72f21m50t211-20261028_090706/lumi-multitorch-full-u24r72f21m50t211-20261028_090706.sif
 ```
 
 ## Slurm batch job script
@@ -123,7 +123,7 @@ export ANTHROPIC_API_KEY=<your-key-here>
 
 # Update SIF path if a newer image is available:
 #   ls /appl/local/laifs/containers/
-SIF=/appl/local/laifs/containers/lumi-multitorch-u24r64f21m43t29-20260124_092648/lumi-multitorch-full-u24r64f21m43t29-20260124_092648.sif
+SIF=/appl/local/laifs/containers/lumi-multitorch-u24r72f21m50t211-20261028_090706/lumi-multitorch-full-u24r72f21m50t211-20261028_090706.sif
 
 GEAK_ROOT="/projappl/${PROJECT}/${USER}/geak"
 GEAK_ENV="${GEAK_ROOT}/geak-env"
@@ -136,8 +136,7 @@ mkdir -p "${RUN_DIR}"
 # `module purge` is correct inside a batch job (fresh job environment).
 # Never run it on a login node — it breaks the interactive shell.
 module purge
-module use /appl/local/laifs/modules
-module load lumi-aif-singularity-bindings
+module load Local-LAIF lumi-aif-singularity-bindings
 
 # Bind mounts use full real paths (projappl/scratch are symlinks on LUMI).
 srun singularity run \
