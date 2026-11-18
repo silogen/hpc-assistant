@@ -2,146 +2,71 @@
 
 > Agent-agnostic HPC Assistant for AMD GPU systems — site-specific skills, a RAG knowledge base, and an inference proxy for HPC login nodes.
 
-The HPC Assistant brings safe, site-aware AI coding agents to HPC login nodes where direct LLM API access and `pip install` are typically unavailable. It ships site-specific skills (Slurm job management, resource and quota commands, AMD GPU profiling with `rocprofv3`, energy consumption profiling with Omnistat), a RAG knowledge base built from HPC documentation and served over MCP, and an Anthropic-to-OpenAI inference proxy so users can route through alternative backends (e.g. Aitta on LUMI). Skills are stored in a generic markdown format that works with Claude Code, OpenCode, and other agent frameworks. Targets AMD Instinct GPU workloads on AMD-equipped HPC systems such as LUMI.
+The HPC Assistant brings safe, site-aware AI coding agents to HPC systems where direct LLM
+API access and `pip install` are typically unavailable. It ships site-specific skills for
+Slurm, quotas, AMD GPU profiling and energy measurement; a RAG knowledge base served over
+MCP; and an Anthropic-to-OpenAI proxy so you can route through alternative backends such as
+Aitta on LUMI. Skills are plain markdown that works with Claude Code, OpenCode and other
+frameworks, and the target is AMD Instinct GPU workloads on systems such as LUMI.
 
 ## Features
 
-- **RAG Knowledge Base** — pluggable backend: a managed remote MCP (e.g. the
-[LUMI AI Factory MCP](https://docs.lumi-supercomputer.eu/laif/software/agent-infrastructure/#mcp-server),
-the recommended default for LUMI) or a local ChromaDB built from cloned HPC docs and served via MCP
-- **Agent Skills** — site-specific and generic skills for resource management, Slurm job management, and GPU profiling
-- **Aitta Proxy** — [LiteLLM](https://docs.litellm.ai/) proxy (Anthropic-to-OpenAI translation) for using alternative inference backends (e.g. Aitta service on LUMI, or your own OpenAI-compatible endpoint)
-- **Agent-Agnostic** — skills are stored in a generic format; supports Claude Code and OpenCode, with the option to add other frameworks
-- **Login-Node Friendly** — no `pip install` required; all Python dependencies run inside Singularity (or Apptainer) containers
+- **RAG knowledge base** — a managed remote MCP (the
+  [LUMI AI Factory MCP](https://docs.lumi-supercomputer.eu/laif/software/agent-infrastructure/#mcp-server)
+  is the default on LUMI) or a local ChromaDB built from cloned HPC docs
+- **Agent skills** — Slurm job management, resource and quota commands, GPU profiling with
+  `rocprofv3`, energy profiling with Omnistat
+- **Runs where you want it** — on your own machine against the cluster over SSH, or on the
+  login node itself
+- **Agent-agnostic** — generic skill format; Claude Code and OpenCode supported, others
+  addable
+- **Login-node friendly** — no `pip install` required; Python dependencies run inside
+  Singularity or Apptainer containers
 
-## Supported HPC Sites
+## Supported HPC sites
 
-| Site | Skills                                                                             | Knowledge base                                                                                                                                             | Documentation                                                           |
-| ---- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| LUMI | Profiling, Resource Management, Slurm Job Management, Energy Consumption Profiling | Remote MCP ([LUMI AI Factory](https://docs.lumi-supercomputer.eu/laif/software/agent-infrastructure/#mcp-server), default) **or** local ChromaDB (optional) | [LUMI User Guide](https://github.com/Lumi-supercomputer/lumi-userguide) |
+| Site | Skills | Knowledge base | Documentation |
+| ---- | ------ | -------------- | ------------- |
+| LUMI | Profiling, Resource Management, Slurm Job Management, Energy Consumption Profiling | Remote MCP ([LUMI AI Factory](https://docs.lumi-supercomputer.eu/laif/software/agent-infrastructure/#mcp-server), default) **or** local ChromaDB | [LUMI User Guide](https://github.com/Lumi-supercomputer/lumi-userguide) |
 
-## Directory Structure
+## Quick start
 
-Layout at a glance:
+**Prerequisites.** An agent framework, and Python 3.10+ for local mode. 
 
-```text
-hpc-assistant/
-├── skills/                  # Agent skills (copied into your project by setup, or installed as a plugin)
-├── .claude-plugin/, .codex-plugin/, .cursor-plugin/, .agents/plugins/  # Plugin + marketplace manifests (skills-only install)
-├── setup/                   # setup.sh, teardown.sh, launch.sh, config.sh, build_db.py, templates/, dockerfiles/, requirements/
-├── scripts/hpc-assistant-init # Project init (with module load)
-├── modulefiles/hpc-assistant/ # Lmod module for site installs
-├── hpc-mcp/                 # MCP bridge: bounded cluster tools over your own SSH connection
-├── LOCAL-MODE.md              # Running the agent on your own machine
-├── LICENSE, LICENSE.TXT         # MIT + AMD license summary
-├── THIRD-PARTY-NOTICES.txt
-├── SECURITY.md
-└── .github/                   # CI, issue/PR templates, CODEOWNERS
-```
-
-**Created in your project directory by setup** (not at the repository root):
-
-- OpenCode: `.opencode/skills/`, `opencode.json`, `AGENTS.md`
-- Claude Code: `.claude/skills/`, `CLAUDE.md`
-- Local mode: `.hpc-assistant.json` — the policy boundary (remote host, project root, and the bounds the assistant honours)
-
-## Install Only the Skills
-
-If you only want the agent skills — no containers, knowledge base, MCP bridge or inference proxy — install them with the [`skills` CLI](https://github.com/vercel-labs/skills) via `npx`. No clone or manual copying required.
-
-```bash
-npx skills add silogen/hpc-assistant
-```
-
-This prompts you to pick skills and an install destination. To install a specific skill into specific agents, pass `--skill` and one or more `--agent` flags (e.g. `claude-code`, `opencode`, `cursor`, `codex`):
-
-```bash
-npx skills add silogen/hpc-assistant --skill profiling --agent opencode
-```
-
-Browse everything available before installing:
-
-```bash
-npx skills add silogen/hpc-assistant --list
-```
-
-`npx` requires [Node.js](https://nodejs.org). Prefer to do it by hand? Copy the folders from `skills/` as in [Install skills](#3-install-skills).
-
-`geak-optimization` is included. Its description restricts it to requests that explicitly name GEAK, and like the setup scripts it only installs markdown, not the GEAK Python package.
-
-### As an agent plugin
-
-This repository is also a plugin marketplace (`hpc-assistant`) with one plugin, `hpc-assistant-skills`, containing all the skills. In Claude Code:
-
-```text
-/plugin marketplace add silogen/hpc-assistant
-/plugin install hpc-assistant-skills@hpc-assistant
-```
-
-Codex and Cursor can add the same repository as a plugin marketplace. Claude Code caches the whole repository when it installs the plugin; only `skills/` is loaded as agent content.
-
-## Prerequisites
-
-- **Singularity** (or **Apptainer** — same CLI on most sites) available on the HPC system
-- One of:
-  - Aitta API token (recommended for LUMI)
-  - Anthropic API key
-  - Your own OpenAI-compatible endpoint (base URL, model id, and an API key if it
-  requires one) — see [Custom OpenAI-Compatible Endpoint](#custom-openai-compatible-endpoint)
-
-If using Claude Code as the agent framework:
-
-- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed:
-
-```bash
-curl -fsSL https://claude.ai/install.sh | bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
-```
-
-If using OpenCode as the agent framework:
-
-- [OpenCode](https://opencode.ai/docs) installed:
+Install OpenCode
+(the default):
 
 ```bash
 curl -fsSL https://opencode.ai/install | bash
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
-## Quick Start
+Or Claude Code:
 
-First, clone the repository (all setup options below run from this checkout):
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+```
+
+You also need an API key for whichever [inference backend](docs/backends.md) you choose.
+Singularity or Apptainer is needed only for the on-cluster extras — the knowledge-base
+containers and, for Claude Code with Aitta, the proxy.
+
+Then clone this repository:
 
 ```bash
 git clone https://github.com/silogen/hpc-assistant.git $HOME/hpc-assistant
-cd $HOME/hpc-assistant
 ```
 
-First decide **where the assistant itself runs**, because it changes everything else:
+**Decide where the agent runs.** In local mode it runs on your own machine and uses the
+login node only for scheduler and file operations, which keeps recursive listing and
+content search off the parallel filesystem. That is the recommended placement. Run it on
+the login node instead when you need to work directly against data that cannot leave the
+cluster.
 
-- **[Local mode](#local-mode--agent-on-your-own-machine-recommended)** — the agent runs on
-your own machine and uses the login node only for scheduler and file operations. This is
-the recommended placement, and the only one we suggest for wider use.
-- **On-cluster** — the agent runs on the login node. Options A, B, and C below. Still
-supported, and the right choice when you need to work directly against data that cannot
-leave the cluster.
+### A. Local mode — agent on your own machine (recommended)
 
-Then pick a setup path for the on-cluster options:
-
-- **[LUMI module + init](#option-a--lumi-environment-module)** — `module load` + `hpc-assistant-init` (no full wizard)
-- **[Setup wizard](#option-b--setup-wizard)** (recommended for first-time / custom options)
-- **[Manual setup](#option-c--manual-setup)** if you prefer to configure files yourself
-
-### Local Mode — agent on your own machine (recommended)
-
-The agent, its file searches, and its model traffic stay on your machine. The login node
-is used only to submit jobs, query the scheduler, and read bounded slices of files.
-Nothing is installed on the cluster, and in the default file-access mode nothing is left
-running there. That keeps recursive listing and content search off Lustre, where each
-visited entry is a metadata request shared by everyone on the machine.
-
-Set up SSH multiplexing first, then run one command in a local clone of your project.
-This example is for LUMI; other sites use the same steps with their own host alias,
-paths, and account.
+Set up SSH multiplexing, then run one command inside a local clone of your project:
 
 ```bash
 # 1. In ~/.ssh/config — without this, every operation opens a new SSH connection
@@ -153,8 +78,9 @@ paths, and account.
 #        ControlPersist 10m
 ssh lumi true && ssh -O check lumi
 
-# 2. In a local clone of your project. This installs the bridge that gives the agent
-#    its cluster tools, configures the project, and checks the connection.
+# 2. Installs the bridge that gives the agent its cluster tools, configures the
+#    project, and verifies the connection. --remote-host is the Host alias from
+#    step 1, so these two have to agree.
 cd ~/projects/myapp
 $HOME/hpc-assistant/scripts/hpc-assistant-local-setup \
   --remote-host lumi \
@@ -162,576 +88,188 @@ $HOME/hpc-assistant/scripts/hpc-assistant-local-setup \
   --account project_465000000
 
 # 3. Run the agent locally
-export AITTA_TOKEN=your-token-here
+export ANTHROPIC_API_KEY=your-key-here
 opencode
 ```
 
-Python 3.10 or newer is the only prerequisite: the bridge goes into a virtualenv of its
-own, and re-running the command is how you upgrade it. `LOCAL-MODE.md` also documents the
-step-by-step form for anyone who would rather install it with `uv` or `pipx`.
+The bridge installs into a virtualenv of its own; re-running the command is how you upgrade
+it. Nothing is installed on the cluster.
 
-The agent reaches the cluster through `[hpc-mcp](hpc-mcp/)`, a small MCP server that runs on
-your machine and exposes cluster operations as bounded tools: the scheduler commands under
-their own names, `run_on_compute` for anything that computes, and depth-limited file access.
-It refuses compute on the login node and recursive traversal of the parallel filesystem, and
-it always names the alternative when it does. After a submit it reports the job id and
-stops; it checks the queue only when you ask. Your `.hpc-assistant.json` is the policy
-boundary it enforces. Init also sets the agent harness to ask before every `hpc` MCP tool
-(`permission.hpc_*` in `opencode.json`; Claude Code's equivalent in `.claude/settings.json`).
+### B. On the login node
 
-Files are shared with the cluster by **rsync**: setup writes a `sync-to-remote.sh` into
-the project, which dry-runs by default and never passes `--delete`.
-
-Read **[LOCAL-MODE.md](LOCAL-MODE.md)** for the full setup, the tradeoffs between the three
-file-access modes, and the current limitations.
-
-### Option A — LUMI Environment Module
-
-For LUMI (or any site that installs this repository under `/appl` or a shared path), use the included **Lmod** module and init script instead of running the full setup wizard. This installs skills and copies the LUMI OpenCode templates into your **project directory**; it does not prompt for credentials or start containers.
+For sites that install this repository on a shared path, the Lmod module plus
+`hpc-assistant-init` is the shortest route. It copies skills and agent config into your
+project directory without prompting for credentials or starting containers:
 
 ```bash
-# From the cloned repository (see Quick Start above), register its modulefiles
 module use $HOME/hpc-assistant/modulefiles
 module load hpc-assistant
 
 cd ~/projects/myapp
-
-# Default: OpenCode + Anthropic
 hpc-assistant-init
 export ANTHROPIC_API_KEY=your-key-here
 opencode
+```
 
-# Or select the Aitta backend (OpenCode talks to Aitta directly)
+For a guided setup with all the options — including the local-ChromaDB knowledge base and
+Claude Code with Aitta — use the wizard, `bash setup/setup.sh`, and see
+[docs/on-cluster-setup.md](docs/on-cluster-setup.md).
+
+### Using Aitta instead
+
+Both paths take `--inference aitta` and read `AITTA_TOKEN`. For local mode:
+
+```bash
+hpc-assistant-local-setup --inference aitta \
+  --remote-host lumi \
+  --remote-root /scratch/project_465000000/myuser/myapp \
+  --account project_465000000
+export AITTA_TOKEN=your-token-here
+opencode
+```
+
+Or on the login node:
+
+```bash
 hpc-assistant-init --inference aitta
 export AITTA_TOKEN=your-token-here
 opencode
-
-# Or point it at your own OpenAI-compatible endpoint
-hpc-assistant-init --inference custom-openai \
-  --api-base http://localhost:8000/v1 --model meta-llama/Llama-3.3-70B-Instruct
-export CUSTOM_API_KEY=your-key-here   # skip if the endpoint ignores it
-opencode
-
-# Optional: also install the GEAK kernel-optimizer skill (off by default)
-hpc-assistant-init --with-skill geak-optimization
 ```
 
-> **Using Aitta:** the target model must be launched before you can use it. If it
-> isn't already running, the first request triggers Aitta to allocate compute and
-> load the model, which can take several minutes. See the
-> [Aitta docs](https://docs.lumi-supercomputer.eu/laif/inference/aitta/) for details.
+> The Aitta model must be running before you can use it. If it is not, your first request
+> triggers Aitta to allocate compute and load it, which can take several minutes.
 
-`hpc-assistant-init` uses the same logic as the setup wizard for skills and templates (`configure_opencode_project` in `setup/config.sh`). By default it writes `AGENTS.md`, `opencode.json`, and `.opencode/skills/` under the project directory. Existing `AGENTS.md` / `opencode.json` files are left unchanged unless you pass `--force`. Core site skills are always copied; optional skills (currently `geak-optimization`) are installed only if you pass `--with-skill` or previously enabled them (the choice is saved in `~/.config/hpc-assistant/config.env`). Use `--no-optional-skills` to drop a saved optional list on the next init.
+OpenCode talks to Aitta directly. Claude Code only speaks the Anthropic API, so that
+combination additionally needs the LiteLLM proxy — see [docs/backends.md](docs/backends.md).
 
+### Skills only, no cluster setup
 
-| Flag                                        | Purpose                                                                                           |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `-d DIR`                                    | Project directory (default: current directory)                                                    |
-| `--force`                                   | Overwrite existing agent config files                                                             |
-| `--framework opencode\|claude-code`         | Agent framework (default: `opencode`) |
-| `--inference anthropic\|aitta\|custom-openai` | Inference backend (default: `anthropic` for both frameworks) |
-| `--api-base URL` | Base URL of your OpenAI-compatible endpoint (`custom-openai` only) |
-| `--model ID` | Model id served by that endpoint (`custom-openai` only) |
-| `--sif-path PATH` | Path to `aitta-proxy.sif` (claude-code + aitta/custom-openai only) |
-| `--with-skill NAME` | Opt in to an optional skill (repeatable), e.g. `geak-optimization` |
-| `--no-optional-skills` | Do not install optional skills (overrides a saved list) |
-| `--no-save-config` | Skip writing `~/.config/hpc-assistant/config.env` |
-
-> **Claude Code + Aitta:** OpenCode talks to Aitta directly, but Claude Code
-> only speaks the Anthropic API, so it must go through the LiteLLM proxy
-> (`aitta-proxy.sif`). For that combination, run `hpc-assistant-init --framework claude-code --inference aitta --sif-path <…>/aitta-proxy.sif`, then use
-> `setup/setup.sh` (credentials) and `setup/launch.sh` (starts the proxy) — the
-> module init alone does not start containers.
-
-Site operators can install the tree under e.g. `/appl/local/laifs/hpc-assistant` and register `modulefiles/` in the site module path; the module resolves `HPC_ASSISTANT_ROOT` from the modulefile location automatically.
-
-The module also sets `**OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true`**, matching `setup/launch.sh` when launching OpenCode (non-blocking background subagents; OpenCode ≥ 1.14.51). Unload the module if you need that variable unset.
-
----
-
-### Option B — Setup Wizard
-
-#### 1. Pull Container Images
-
-> **Skip this step entirely if you are on LUMI using the default configuration** (remote MCP + Aitta + OpenCode). No containers are needed for that path.
-
-Images are published to **Docker Hub** in the public
-`[amdenterpriseai/hpc-assistant](https://hub.docker.com/r/amdenterpriseai/hpc-assistant)`
-repository. All images share that one repository and are distinguished by a tag
-prefix (e.g. `amdenterpriseai/hpc-assistant:aitta-proxy-latest`). The repository
-is public, so no Docker Hub login is required to pull.
-
-Pull them on the HPC login node (into your SIF directory, e.g. `~/.local/share/hpc-assistant/sif/`):
+To install just the agent skills — no bridge, no containers, no knowledge base — use the
+[`skills` CLI](https://github.com/vercel-labs/skills) via `npx` (needs
+[Node.js](https://nodejs.org)):
 
 ```bash
-mkdir -p ~/.local/share/hpc-assistant/sif/
-cd ~/.local/share/hpc-assistant/sif/
-
-# Aitta proxy (LiteLLM) — only needed when using Aitta inference with Claude Code.
-# OpenCode speaks OpenAI API natively and connects to Aitta directly; no proxy needed.
-# This image is the official LiteLLM proxy with our Aitta config baked in; see
-# setup/dockerfiles/aitta-proxy.dockerfile.
-singularity build aitta-proxy.sif docker://docker.io/amdenterpriseai/hpc-assistant:aitta-proxy-latest
-
-# The two images below are ONLY needed if you choose the "local ChromaDB"
-# knowledge-base backend during setup. If you use a managed remote MCP (the
-# default for LUMI), you can skip both.
-singularity build build-db.sif docker://docker.io/amdenterpriseai/hpc-assistant:build-db-latest
-singularity build chroma-mcp.sif docker://docker.io/amdenterpriseai/hpc-assistant:chroma-mcp-latest
+npx skills add silogen/hpc-assistant
 ```
 
-#### 2. Run Setup on the Login Node
+That prompts you to pick skills and a destination. To target one skill and framework
+directly:
 
 ```bash
-bash setup/setup.sh
+npx skills add silogen/hpc-assistant --skill profiling --agent opencode
 ```
 
-The setup wizard will:
+This repository is also a Claude Code / Codex / Cursor plugin marketplace. In Claude Code:
 
-1. Ask you to select your HPC site (LUMI)
-2. Use the site's **managed remote MCP** as the knowledge base automatically (LUMI ships one, so there's nothing to build or host and no question is asked)
-3. Offer to use **default LUMI settings** (Aitta + `openai/gpt-oss-120b`) — accept with Enter to skip the remaining configuration questions
-4. If not using defaults, choose the inference backend (Aitta, Anthropic API, or your own OpenAI-compatible endpoint)
-5. Select the agent framework (Claude Code, OpenCode, or Generic)
-6. Offer optional skills (currently `geak-optimization`) — default **no**; this question is asked even when using site defaults
-7. Prompt for **SIF paths** when needed (`aitta-proxy.sif` for Claude Code in front of an OpenAI-compatible endpoint; `build-db` / `chroma-mcp` for local-ChromaDB)
-8. (Local-ChromaDB only) Clone HPC documentation and build the knowledge base
-9. Start the relevant services as Singularity instances (skipped when not needed — e.g. OpenCode + Aitta uses no proxy)
-10. Install skills and configure MCP for the selected agent framework
-
-#### 3. Launch the Assistant
-
-After initial setup, use the launch script to start (or restart) the assistant:
-
-```bash
-bash setup/launch.sh
+```text
+/plugin marketplace add silogen/hpc-assistant
+/plugin install hpc-assistant-skills@hpc-assistant
 ```
 
-The launch script checks that services are running (restarting them if needed — handles login node changes), then starts the agent.
-
----
-
-### Option C — Manual Setup
-
-If you prefer to configure the assistant without the wizard, follow these steps. The repository includes pre-filled templates for LUMI under `setup/templates/`.
-
-#### 1. Copy the agent config template
-
-**OpenCode (recommended for LUMI + Aitta):**
-
-```bash
-# Using Aitta inference (default for LUMI)
-cp setup/templates/lumi-opencode-aitta.json opencode.json
-
-# Or using Anthropic API
-cp setup/templates/lumi-opencode-anthropic.json opencode.json
-```
-
-The `lumi-opencode-aitta.json` template is pre-configured with:
-
-- Aitta provider pointing to `https://aitta-api.csc.fi/openai/v1`
-- Model: `openai/gpt-oss-120b`
-- LUMI AI Factory MCP (`lumi-aif`) registered
-- HPC-safe permission rules
-
-If you need a different Aitta URL or model, edit `opencode.json` directly after copying.
-
-**Your own OpenAI-compatible endpoint:**
-
-```bash
-cp setup/templates/opencode-custom.json opencode.json
-```
-
-Then replace the `{{CUSTOM_API_BASE}}` and `{{CUSTOM_MODEL}}` placeholders with
-your endpoint and model, and `"{{OC_MCP_BLOCK}}"` with an MCP block (e.g. the
-`lumi-aif` block from `lumi-opencode-aitta.json`) or `{}` for no knowledge base.
-The API key is read from `CUSTOM_API_KEY` in the environment.
-
-**Claude Code:**
-
-```bash
-cp setup/templates/lumi-system-prompt.md CLAUDE.md
-```
-
-Then register the LUMI AI Factory MCP:
-
-```bash
-claude mcp add --transport http lumi-aif https://lumi-aif-agents.2.rahtiapp.fi/mcp
-```
-
-#### 2. Copy the system prompt
-
-**OpenCode** — the system prompt path is declared inside `opencode.json` as `"instructions": ["AGENTS.md"]`:
-
-```bash
-cp setup/templates/lumi-system-prompt.md AGENTS.md
-```
-
-#### 3. Install skills
-
-Copy the LUMI skills into the agent's skills directory:
-
-```bash
-# OpenCode
-mkdir -p .opencode/skills
-cp -r skills/profiling .opencode/skills/
-cp -r skills/lumi-resource-management .opencode/skills/
-cp -r skills/lumi-slurm-job-management .opencode/skills/
-cp -r skills/energy-profiling .opencode/skills/
-
-# Claude Code
-mkdir -p .claude/skills
-cp -r skills/profiling .claude/skills/
-cp -r skills/lumi-resource-management .claude/skills/
-cp -r skills/lumi-slurm-job-management .claude/skills/
-cp -r skills/energy-profiling .claude/skills/
-
-# Optional (GEAK kernel optimizer — not installed by default):
-# cp -r skills/geak-optimization .opencode/skills/   # or .claude/skills/
-```
-
-#### 4. Set your API token and launch
-
-**OpenCode + Aitta:**
-
-```bash
-export AITTA_TOKEN=your-token-here
-opencode
-```
-
-**Claude Code + Aitta:**
-
-Start the Aitta proxy (the LiteLLM proxy; requires `aitta-proxy.sif`). LiteLLM
-routes by provider prefix, so the model is passed with a `hosted_vllm/` prefix
-(`LITELLM_MODEL=hosted_vllm/$TARGET_MODEL`) — it strips `hosted_vllm/` to select
-the OpenAI-compatible provider and forwards `openai/gpt-oss-120b` to Aitta
-verbatim. (`hosted_vllm` is used instead of `openai` because the `openai`
-provider routes `/v1/messages` through the OpenAI Responses API — which Aitta
-doesn't implement — and also strips a leading `openai/` from the model name.)
-
-```bash
-export AITTA_API_BASE=https://aitta-api.csc.fi/openai/v1
-export AITTA_TOKEN=your-token-here
-export LITELLM_MODEL=hosted_vllm/openai/gpt-oss-120b
-# Use `singularity` or `apptainer` depending on what is on your PATH (same subcommands).
-singularity instance start \
-  --env AITTA_API_BASE="$AITTA_API_BASE" \
-  --env AITTA_TOKEN="$AITTA_TOKEN" \
-  --env LITELLM_MODEL="$LITELLM_MODEL" \
-  aitta-proxy.sif aitta-proxy
-singularity exec \
-  --env AITTA_API_BASE="$AITTA_API_BASE" \
-  --env AITTA_TOKEN="$AITTA_TOKEN" \
-  --env LITELLM_MODEL="$LITELLM_MODEL" \
-  instance://aitta-proxy \
-  litellm --config /app/config.yaml --host 0.0.0.0 --port 8001 &
-
-# Point Claude Code at the proxy. The proxy exposes the Aitta backend as the
-# model name `aitta` (see setup/aitta-proxy/config.yaml).
-export ANTHROPIC_BASE_URL=http://localhost:8001
-export ANTHROPIC_API_KEY="$AITTA_TOKEN"
-export ANTHROPIC_AUTH_TOKEN="$AITTA_TOKEN"
-export ANTHROPIC_MODEL=aitta
-export ANTHROPIC_SMALL_FAST_MODEL=aitta
-claude
-```
-
-**Anthropic API:**
-
-```bash
-export ANTHROPIC_API_KEY=your-key-here
-opencode   # or: claude
-```
-
-## Knowledge Base Backends
-
-The assistant queries a RAG knowledge base of HPC documentation through MCP. You
-pick the backend during setup; the choice is persisted to `~/.config/hpc-assistant/config.env`
-as `KB_BACKEND` and changes which tools are exposed to the agent.
-
-### Remote MCP (Recommended for LUMI)
-
-For sites that expose a managed MCP server, the assistant simply registers it
-with your agent framework. No data is cloned to the login node, no index is
-built locally, and no `chroma-mcp` instance is started.
-
-LUMI uses the LUMI AI Factory MCP server, maintained by CSC and continuously
-updated from the LUMI Docs and the LUMI AI Guide:
-
-- URL: `https://lumi-aif-agents.2.rahtiapp.fi/mcp`
-- Tool: `retrieve_docs`
-- Source: [LUMI AIF — Infrastructure for AI agents](https://docs.lumi-supercomputer.eu/laif/software/agent-infrastructure/#mcp-server)
-
-What setup wires up:
-
-- **Claude Code** — `claude mcp add --transport http lumi-aif https://lumi-aif-agents.2.rahtiapp.fi/mcp`
-- **OpenCode** — adds an `mcp.lumi-aif` block of `{ "type": "remote", "url": "..." }` to `opencode.json`
-- **Generic** — point your own client at the URL; e.g. `fastmcp call https://lumi-aif-agents.2.rahtiapp.fi/mcp retrieve_docs 'query=...' 'k=2'`
-
-The agent system prompt (`CLAUDE.md` / `AGENTS.md`) is generated to instruct
-the model to call `retrieve_docs` from the `lumi-aif` MCP server before
-falling back to general knowledge.
-
-### Local ChromaDB
-
-Clones the site's documentation repository, chunks and embeds it with the
-`build-db.sif` container, and serves it through the `chroma-mcp.sif`
-Singularity instance over MCP. Useful when:
-
-- Working on a new site that does not yet have a managed MCP, or
-- You want to extend or replace the knowledge base with private/internal docs.
-
-This path requires the extra `build-db` and `chroma-mcp` SIF images from
-[Pull Container Images](#1-pull-container-images).
-
-## Inference Backends
-
-### Aitta (Recommended for LUMI)
-
-For Claude Code, the Aitta proxy translates Anthropic API requests to
-OpenAI-compatible format. It is the official [LiteLLM](https://docs.litellm.ai/)
-proxy (the well-known gateway for exactly this translation) with our Aitta
-config baked in, pinned to a vetted stable release — see
-`setup/dockerfiles/aitta-proxy.dockerfile`. It runs as a Singularity instance on
-the login node in detached mode — no separate terminal needed.
-
-> OpenCode speaks the OpenAI API natively and connects to Aitta directly, so it
-> does not use the proxy.
-
-**Configuration:** LiteLLM reads everything from environment variables at start
-(`AITTA_API_BASE`, `AITTA_TOKEN`, and `LITELLM_MODEL`), so the published image
-contains no secrets, URLs, or model names. It exposes the Aitta backend under
-the model name `aitta`; Claude Code is pointed at it with `ANTHROPIC_MODEL=aitta`.
-
-**Choosing a model:** Set `TARGET_MODEL` (via the setup wizard or your
-credentials file) to pick which Aitta model the proxy serves — the launch
-scripts inject it at runtime, so no rebuild is needed. The list of known
-default models lives in `[setup/aitta-proxy/config.yaml](setup/aitta-proxy/config.yaml)`;
-edit that file (and rebuild the SIF) if you want to change the baked-in default.
-
-**Login node handling:** The proxy binds to `0.0.0.0` so it's accessible from any login node. The launch script detects which node the proxy is on and reconnects or restarts as needed.
-
-### Anthropic API
-
-Direct connection to Anthropic's API. Requires a valid API key and network access from the login node.
-
-### Custom OpenAI-Compatible Endpoint
-
-Select `**custom-openai`** to use any endpoint that serves the OpenAI
-`/chat/completions` API — a vLLM or llama.cpp server you started yourself
-(including one running in a SLURM job), Ollama, TGI, a site-hosted gateway, or a
-commercial OpenAI-compatible provider.
-
-You supply three things; nothing about the endpoint is baked into this repository
-or the container images:
-
-
-| Value                        | Where it is stored           | Notes                                                             |
-| ---------------------------- | ---------------------------- | ----------------------------------------------------------------- |
-| Base URL (`CUSTOM_API_BASE`) | `config.env`                 | Include the version path, e.g. `http://localhost:8000/v1`         |
-| Model id (`CUSTOM_MODEL`)    | `config.env`                 | Must match what the endpoint serves — there is no default         |
-| API key (`CUSTOM_API_KEY`)   | `credentials.env` (mode 600) | Optional; a placeholder is stored for servers that don't check it |
-
-
-Set it up either way:
-
-```bash
-# Wizard: answer "n" to the defaults prompt, then pick option 3
-bash setup/setup.sh
-
-# Module path (no prompts):
-hpc-assistant-init --inference custom-openai \
-  --api-base http://localhost:8000/v1 --model my-model
-```
-
-**OpenCode** connects to the endpoint directly through the
-`@ai-sdk/openai-compatible` provider — no proxy and no container. The URL and
-model are written into `opencode.json`, and only the key is passed at launch, so
-change the URL or model by editing `opencode.json` (or re-running setup).
-
-**Claude Code** goes through the same LiteLLM proxy used for Aitta, because it
-only speaks the Anthropic API. This needs `aitta-proxy.sif`, and requests are
-routed with the `hosted_vllm/` provider prefix — correct for vLLM and most
-self-hosted OpenAI-compatible servers. The proxy reads your URL, key, and model
-from the environment at start, so the published image needs no rebuild.
-
-> **Login-node reachability:** the endpoint must be reachable from the login node.
-> A model served inside a SLURM job needs the compute node's hostname (and an
-> open port), not `localhost`.
+Either way installs `geak-optimization` too — same opt-in behavior as the full setup: it
+only copies markdown, never the GEAK package itself.
 
 ## Skills
 
-Skills are stored in `skills/` in a generic markdown format compatible with multiple agent frameworks. Each skill has a `SKILL.md` file with YAML frontmatter and instruction content, plus optional `references/` for supporting documentation.
+Skills live in `skills/` as generic markdown: a `SKILL.md` with YAML frontmatter and
+instructions, plus optional `references/`. Setup copies them into `.opencode/skills/` or
+`.claude/skills/`.
 
-| Skill                        | Scope                | Description                                                       |
-| ---------------------------- | -------------------- | ----------------------------------------------------------------- |
-| `profiling`                  | Generic              | AMD GPU profiling with rocprofv3 (tracing, counters, Perfetto)    |
-| `energy-profiling`           | Generic              | Energy consumption profiling with Omnistat                        |
-| `lumi-resource-management`   | LUMI                 | Project quotas, billing units, storage allocations                |
-| `lumi-slurm-job-management`  | LUMI                 | Slurm job submission, partitions, containers, Python/PyTorch jobs |
-| `geak-optimization`          | Generic (opt-in)     | GEAK GPU kernel optimizer; not copied unless enabled at setup     |
+| Skill | Scope | Description |
+| ----- | ----- | ----------- |
+| `profiling` | Generic | AMD GPU profiling with rocprofv3 (tracing, counters, Perfetto) |
+| `energy-profiling` | Generic | Energy consumption profiling with Omnistat |
+| `lumi-resource-management` | LUMI | Project quotas, billing units, storage allocations |
+| `lumi-slurm-job-management` | LUMI | Slurm job submission, partitions, containers, Python/PyTorch jobs |
+| `geak-optimization` | Generic (opt-in) | GEAK GPU kernel optimizer; not copied unless enabled at setup |
 
-`geak-optimization` is **opt-in**. The setup wizard asks before copying it; `hpc-assistant-init` requires `--with-skill geak-optimization`. Enabling the skill only copies the markdown into the agent — it does not install the GEAK Python package.
-
-### Adding Skills for a New Site
-
-1. Create a skill directory under `skills/` (e.g. `skills/mysite-slurm/`)
-2. Write `SKILL.md` with frontmatter and instructions
-3. Add the skill name in `get_site_config` in `setup/config.sh`: `SITE_SKILLS` for always-on skills, or `SITE_OPTIONAL_SKILLS` for opt-in skills
-4. Re-run `setup.sh` (or `hpc-assistant-init --with-skill NAME` for optional skills) to install them
-
-## Agent Framework Support
-
-### Claude Code
-
-When Claude Code is selected during setup:
-
-- Core site skills from `skills/` are copied to `.claude/skills/`; optional skills only if enabled at setup
-- The knowledge-base MCP is registered: **remote MCP** (LUMI default) or **chroma** (local-ChromaDB path)
-- A `CLAUDE.md` is created with assistant instructions
-- Launch script sets environment variables and starts `claude`
-
-Use from any project directory:
+`geak-optimization` is opt-in: the setup wizard asks before copying it, or add
+`--with-skill geak-optimization` when you init a project. Local mode:
 
 ```bash
-claude --add-dir /path/to/hpc-assistant
+hpc-assistant-local-setup --with-skill geak-optimization \
+  --remote-host lumi \
+  --remote-root /scratch/project_465000000/myuser/myapp \
+  --account project_465000000
 ```
 
-### OpenCode
-
-When OpenCode is selected during setup:
-
-- Core site skills from `skills/` are copied to `.opencode/skills/`; optional skills only if enabled at setup
-- An `AGENTS.md` is created with assistant instructions
-- An `opencode.json` is generated with:
-  - Provider configuration (Aitta via `@ai-sdk/openai-compatible` or Anthropic native)
-  - MCP registration (remote `lumi-aif` on LUMI, or local chroma when using local-ChromaDB)
-  - Model selection
-- Launch script exports the API token and starts `opencode`
-
-**Key advantage with Aitta:** OpenCode speaks OpenAI API natively via the `@ai-sdk/openai-compatible` provider, so it connects directly to the Aitta endpoint — no proxy needed. This means one fewer container to manage.
-
-Use from the project directory:
+On the login node:
 
 ```bash
-cd /path/to/hpc-assistant && opencode
+hpc-assistant-init --with-skill geak-optimization
 ```
 
-### Generic / Other Frameworks
+Enabling it copies the skill's instructions into the agent; it does not install GEAK
+itself. Once enabled, ask the agent to use it — e.g. *"Use GEAK to optimize kernel.hip"* —
+and it installs GEAK, builds the environment, and submits the optimization job.
 
-Skills are available as markdown files in `skills/`. Services (chroma-mcp, aitta-proxy) run independently. Configure your agent framework to:
+To add a site: create a directory under `skills/`, write its `SKILL.md`, add the skill name
+to `get_site_config` in `setup/config.sh` (`SITE_SKILLS` for always-on, `SITE_OPTIONAL_SKILLS`
+for opt-in), and re-run setup.
 
-- Use the chroma MCP server for RAG queries
-- Read skill files for instruction context
-- Point API requests at the aitta-proxy if using Aitta inference. The proxy is a
-LiteLLM gateway: send Anthropic-format requests to `/v1/messages` (model name
-`aitta`) or OpenAI-format requests to `/v1/chat/completions`.
+## Documentation
 
-## Security and Safety
+| Document | Contents |
+| -------- | -------- |
+| [docs/LOCAL-MODE.md](docs/LOCAL-MODE.md) | Running the agent on your own machine: full setup, the policy file, current limitations |
+| [docs/on-cluster-setup.md](docs/on-cluster-setup.md) | Login-node setup — environment module, wizard, manual — plus stopping services and teardown |
+| [docs/backends.md](docs/backends.md) | Inference backends (Aitta, Anthropic, custom OpenAI-compatible), knowledge-base backends, framework support |
+| [docs/safety.md](docs/safety.md) | Prompt-level rules, the OpenCode permission model, and what it cannot do |
+| [hpc-mcp/README.md](hpc-mcp/README.md) | The MCP bridge: tool reference and design |
 
-The assistant runs against shared HPC systems where careless commands can affect other
-users, waste billing units, or corrupt data. Safety is enforced at two levels, and the most
-effective control is architectural: running the agent locally so that the expensive
-operations never reach the cluster at all.
+Repository layout:
 
-### Prompt-Level Rules (CLAUDE.md / AGENTS.md)
+```text
+skills/        Agent skills, copied into your project by setup, or installed as a plugin
+.claude-plugin/, .codex-plugin/, .cursor-plugin/, .agents/plugins/
+               Plugin + marketplace manifests (skills-only install)
+setup/         setup.sh, launch.sh, teardown.sh, config.sh, templates/, dockerfiles/
+scripts/       hpc-assistant-init, hpc-assistant-local-setup
+hpc-mcp/       MCP bridge: bounded cluster tools over your own SSH connection
+modulefiles/   Lmod module for site installs
+docs/          The documents listed above
+```
 
-Both Claude Code and OpenCode receive explicit HPC safety instructions:
+Setup writes into *your project directory*, not the repository: `opencode.json` +
+`AGENTS.md` + `.opencode/skills/` for OpenCode, `CLAUDE.md` + `.claude/skills/` for Claude
+Code, and `.hpc-assistant.json` — the policy boundary — in local mode.
 
-- Never run destructive commands (`rm -rf`, `module purge`) without confirmation
-- Never submit or cancel Slurm jobs without showing the full command first
-- Never modify shell config files (`.bashrc`, etc.) without approval
-- Never traverse the parallel filesystem recursively, and always bound a search
-- Prefer read-only investigation before making changes
-- Warn about quota impact before creating large files
+## How it works
 
-The filesystem rules are stated in the prompt as well as in the permission block because
-an agent's built-in `Read`, `Glob`, and `Grep` tools are not shell commands, so no bash
-permission rule governs them.
+On the login node, the agent is an ordinary process with skills, a knowledge-base MCP and a
+permission block.
 
-### Tool-Level Permissions (OpenCode only)
+In local mode it instead reaches the cluster through [`hpc-mcp`](hpc-mcp/), a small MCP
+server on your machine that exposes cluster operations as bounded tools: scheduler commands
+under their own names, `run_on_compute` for anything that computes, and depth-limited file
+access. It refuses compute on the login node and recursive traversal of the parallel
+filesystem, naming the alternative when it does. After a submit it reports the job id and
+stops, checking the queue only when you ask. Your `.hpc-assistant.json` is the policy
+boundary it enforces, and init additionally sets the agent harness to ask before every
+`hpc` MCP tool (`permission.hpc_*` in `opencode.json`; Claude Code's equivalent in
+`.claude/settings.json`). Files move by **rsync**: setup writes a `sync-to-remote.sh` into
+the project, which dry-runs by default and never passes `--delete`.
 
-OpenCode's `opencode.json` includes granular permissions:
-
-
-| Category                   | Policy                                                      |
-| -------------------------- | ----------------------------------------------------------- |
-| Cheap, constant-cost reads | `allow` — `ls`, `cat`, `head`, `tail`, `diff`, `pwd`, `env` |
-| Search                     | `allow` — `find`, `grep`, `wc`                              |
-| Whole-tree traversal       | `ask` — `du`, `ls -R`                                       |
-| Scheduler queries          | `allow` — `squeue`, `sacct`, `sinfo`, `scontrol show`       |
-| Job submission             | `ask` — `sbatch`, `srun`, `salloc`, `scancel`               |
-| File modification          | `ask` — all edits require approval                          |
-| Deletion                   | `ask` for `rm`, `deny` for `rm -rf`                         |
-| System administration      | `deny` — `chown`, `dd`, `mkfs`, `kill -9`, `reboot`         |
-| External directories       | `ask` — any access outside the project directory            |
-| Doom loop detection        | `deny` — prevents infinite tool call loops                  |
-
-
-`du` and `ls -R` are gated because they walk an entire tree, and on a parallel filesystem
-every entry visited is a request to a metadata server shared by the whole machine. `find`
-and `grep` are allowed because gating commands this common trains people to approve without
-reading, which buys nothing. Their recursive forms carry the same cost, so the system prompt
-asks the agent to bound them — guidance, not enforcement, which is the honest limit of what
-a glob-pattern permission list can do and part of why local mode is the recommended
-placement.
-
-Rules are evaluated **last match wins**, so ordering in the `permission` block is
-significant: put broad rules first and exceptions after them. To customise, edit the
-`permission` block in `opencode.json`; see the
-[OpenCode permissions docs](https://opencode.ai/docs/permissions/) for full syntax.
-
-In local mode, `hpc-assistant-init` also sets `"hpc_*": "ask"` so every tool from the
-`hpc` MCP server prompts before it runs, `"external_directory": "deny"` so Read/Glob
-cannot leave the project, `"ls *"` / `"find *"` / `"cat *"` to `"deny"` so bash
-cannot walk around that, and `"edit"` deny on `opencode.json`, `.hpc-assistant.json`,
-and `AGENTS.md` so the assistant cannot rewrite its own policy. That overlay lives
-in `opencode.json` (or `.claude/settings.json` for Claude Code), not in
-`.hpc-assistant.json` — the bridge cannot show an approval dialog.
-
-Be aware of what this layer cannot do. Glob patterns match command identity, not cost, so
-they can gate `find` but cannot allow a bounded `find`; and they are evadable, since
-`ls -R` is gated while `ls -Rla` is not.
+Safety is enforced through the system prompt and, on OpenCode, a granular permission block
+— `rm -rf` and administrative commands are denied, job submission and edits require
+approval, and whole-tree walks like `du` are gated because every entry visited is a request
+to a shared metadata server. The honest limits of that approach, and the full rule table,
+are in [docs/safety.md](docs/safety.md).
 
 ## Configuration
 
-All configuration is stored in `~/.config/hpc-assistant/`:
+Stored in `~/.config/hpc-assistant/`:
 
+| File | Contents |
+| ---- | -------- |
+| `config.env` | Site, framework, KB backend, paths, proxy host/port, custom endpoint URL and model |
+| `credentials.env` | API keys and tokens (mode 600) |
+| `logs/` | Service logs |
 
-| File              | Contents                                                                           |
-| ----------------- | ---------------------------------------------------------------------------------- |
-| `config.env`      | Site, framework, KB backend, paths, proxy host/port, custom endpoint URL and model |
-| `credentials.env` | API keys and tokens (mode 600)                                                     |
-| `logs/`           | Service logs (aitta-proxy, etc.)                                                   |
+In local mode the per-project `.hpc-assistant.json` holds the remote host, the project root
+and the bounds the assistant honours. For stopping services and full teardown, see
+[docs/on-cluster-setup.md](docs/on-cluster-setup.md).
 
-
-## Stopping Services
-
-```bash
-# Source the config helpers
-source setup/config.sh
-detect_container_runtime
-stop_services
-```
-
-Or manually (only the services that are actually running for your setup):
-
-```bash
-singularity instance stop aitta-proxy   # Aitta + Claude Code only
-singularity instance stop chroma-mcp    # local-chroma KB only
-```
-
-## Full Teardown
-
-To remove everything — services, knowledge base, documentation, config, credentials, and agent framework integration:
-
-```bash
-bash setup/teardown.sh
-```
-
-This will prompt for confirmation before proceeding. SIF container images and agent binaries (Claude Code, OpenCode) are not removed.
-
----
 
 ## Feedback
 
@@ -753,22 +291,11 @@ Team ownership: [@silogen/hpc-assistant](https://github.com/orgs/silogen/teams/h
 
 See [CODEOWNERS](.github/CODEOWNERS) for the full ownership list.
 
----
-
-## Governance
-
-
-| File                                     | Purpose                                |
-| ---------------------------------------- | -------------------------------------- |
-| [SECURITY.md](SECURITY.md)               | How to report security vulnerabilities |
-| [.github/CODEOWNERS](.github/CODEOWNERS) | Code ownership and PR review routing   |
-
 
 ## Open Source Compliance
 
 This repository follows AMD's open-source software release requirements.
 Compliance artifacts:
-
 
 | File                                               | Purpose                                                     |
 | -------------------------------------------------- | ----------------------------------------------------------- |
@@ -776,7 +303,6 @@ Compliance artifacts:
 | [LICENSE](LICENSE)                                 | MIT license text for AMD-authored software                  |
 | [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) | Third-party copyright and license notices                   |
 | [SOURCE-MANIFEST.md](SOURCE-MANIFEST.md)           | AMD-authored sources and third-party component inventory    |
-
 
 AMD-authored source files include SPDX license identifiers in their headers.
 Container images distributed via Docker Hub, and the local-mode virtualenv

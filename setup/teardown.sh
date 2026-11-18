@@ -118,9 +118,14 @@ else
 fi
 
 DOCS="${DOCS_DIR:-$DEFAULT_DOCS_DIR}"
-if [[ -n "$DOCS" ]] && [[ -d "$DOCS" ]]; then
+# Only remove a clone. DOCS_DIR is free text from the setup prompt, so it can
+# name a directory of hand-written files -- the repository's own docs/ among
+# them. A clone always has .git; that is what makes this safe to rm -rf.
+if [[ -n "$DOCS" ]] && [[ -d "$DOCS" ]] && [[ -d "$DOCS/.git" ]]; then
   rm -rf "$DOCS"
   echo "  Removed documentation: $DOCS"
+elif [[ -n "$DOCS" ]] && [[ -d "$DOCS" ]]; then
+  echo "  Left $DOCS alone: not a documentation clone (no .git)"
 else
   echo "  No documentation found (skipped)"
 fi

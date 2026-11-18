@@ -36,9 +36,6 @@ id_ed25519.pub
 # ChromaDB persistent data
 chroma_data/
 
-# Cloned HPC documentation sources (re-fetched by setup.sh)
-docs/
-
 # Logs
 logs/
 *.log

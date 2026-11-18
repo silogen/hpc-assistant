@@ -151,9 +151,8 @@ One GPU, single node, using the LUMI AI Factory containerised PyTorch stack. Rep
 #SBATCH --time=1:00:00
 
 module purge
-module use /appl/local/laifs/modules
-module load lumi-aif-singularity-bindings
-export SIF=/appl/local/laifs/containers/lumi-multitorch-u24r64f21m43t29-20260124_092648/lumi-multitorch-full-u24r64f21m43t29-20260124_092648.sif
+module load Local-LAIF lumi-aif-singularity-bindings
+export SIF=/appl/local/laifs/containers/lumi-multitorch-u24r72f21m50t211-20261028_090706/lumi-multitorch-full-u24r72f21m50t211-20261028_090706.sif
 srun singularity run $SIF python3 myprog.py <options>
 ```
 

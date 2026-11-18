@@ -18,7 +18,7 @@ It ships two workflows:
 
 ## Prerequisites
 
-- AMD Instinct MI GPU (CDNA — MI250x gfx942, MI300X gfx942, MI350X gfx950, etc.)
+- AMD Instinct MI GPU (CDNA — MI250x gfx90a, MI300X gfx942, MI350X gfx950, etc.)
 - ROCm 6+
 - A profiler: `rocprofv3` / `rocprof-compute` / `rocprof`
 - Python 3.8+

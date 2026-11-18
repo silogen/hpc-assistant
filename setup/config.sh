@@ -631,13 +631,13 @@ configure_claude_code_project() {
 # ── Local mode (agent on the user's machine, cluster over SSH) ─────────────────
 # Local mode installs the same skills and system prompt into a project directory on
 # the user's own machine, plus a .hpc-assistant.json declaring the remote host,
-# project root and the bounds the assistant honours. See LOCAL-MODE.md.
+# project root and the bounds the assistant honours. See docs/LOCAL-MODE.md.
 
 # Only rsync is supported. git and sshfs were designed and partly implemented but never
 # tested end to end, so they are not offered rather than shipped unverified. Re-adding one
 # means listing it here, restoring its block in templates/hpc-assistant-local.json, adding
 # it to FILE_ACCESS_MODES in hpc-mcp/src/hpc_mcp/config.py, and documenting it in
-# LOCAL-MODE.md and the local-mode prompt.
+# docs/LOCAL-MODE.md and the local-mode prompt.
 LOCAL_MODE_FILE_ACCESS_MODES="rsync"
 
 local_mode_defaults() {
@@ -679,7 +679,7 @@ check_local_prerequisites() {
     echo "  WARNING: could not read SSH config for host '$host'." >&2
   elif [[ "$resolved" == "$host" ]]; then
     echo "  WARNING: '$host' does not look like a configured SSH host alias." >&2
-    echo "           Add a Host block for it in ~/.ssh/config — see LOCAL-MODE.md." >&2
+    echo "           Add a Host block for it in ~/.ssh/config — see docs/LOCAL-MODE.md." >&2
   fi
 
   # ControlMaster multiplexing is what keeps the connection profile defensible: without
@@ -706,7 +706,7 @@ check_sshfs_prerequisites() {
     echo "  WARNING: sshfs not found in PATH." >&2
     if [[ "$(uname -s)" == "Darwin" ]]; then
       echo "           On macOS this needs macFUSE, which requires a kernel extension and" >&2
-      echo "           (on Apple Silicon) reduced-security approval. See LOCAL-MODE.md." >&2
+      echo "           (on Apple Silicon) reduced-security approval. See docs/LOCAL-MODE.md." >&2
     else
       echo "           Install it with your package manager, e.g. 'apt install sshfs'." >&2
     fi

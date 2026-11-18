@@ -92,7 +92,7 @@ cd ~/projects/myapp
 
 That installs the bridge into a virtualenv of its own under
 `~/.local/share/hpc-assistant/`, using the pinned graph in
-[`hpc-mcp/requirements.txt`](hpc-mcp/requirements.txt), initialises the
+[`hpc-mcp/requirements.txt`](../hpc-mcp/requirements.txt), initialises the
 project, registers the bridge in your agent config **by absolute path**, and finishes by
 opening a connection to the cluster to prove the whole chain works. Re-running it is safe:
 the virtualenv is reused and existing project files are left alone unless you pass
@@ -323,9 +323,6 @@ the bound disappears. Change them yourself, outside the assistant.
 
 ## Limitations today
 
-- **GEAK is not supported in local mode.** Its job scripts and enforcement hooks assume
-  the agent is running on the cluster. `--local --geak` is rejected rather than silently
-  producing something broken.
 - **Nothing syncs your files for you.** The bridge reads and writes individual files within
   your project root, and it writes the batch scripts it submits, but moving a working tree
   between your machine and the cluster is still your `git push` or `rsync` — see step 3.

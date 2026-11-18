@@ -39,7 +39,7 @@ Local mode (agent runs on your own machine, cluster reached over SSH):
                           .hpc-assistant.json, appends a local-mode section to
                           the system prompt, requires approval for hpc-mcp tools
                           and raw ssh/scp/rsync, and denies local paths outside
-                          the project. See LOCAL-MODE.md.
+                          the project. See docs/LOCAL-MODE.md.
   --remote-host ALIAS     SSH host alias for the cluster, as defined in
                           ~/.ssh/config (default: lumi). Must be an alias, not a
                           user@hostname — that is what keeps credentials out of
@@ -49,7 +49,7 @@ Local mode (agent runs on your own machine, cluster reached over SSH):
                           assistant does remotely is bounded to this path.
   --account NAME          Slurm account to bill jobs to, e.g. project_465000000
   --file-access MODE      How files are shared with the cluster. Only rsync is
-                          supported; see LOCAL-MODE.md.
+                          supported; see docs/LOCAL-MODE.md.
   --partition NAME        Default Slurm partition (default: small-g)
 
 Examples:
@@ -258,7 +258,7 @@ if [[ "$LOCAL_MODE" == "true" ]]; then
     *@*)
       echo "ERROR: --remote-host must be an SSH host alias, not user@hostname." >&2
       echo "       Define a Host block in ~/.ssh/config and pass its name, so that" >&2
-      echo "       authentication stays with your ssh-agent. See LOCAL-MODE.md." >&2
+      echo "       authentication stays with your ssh-agent. See docs/LOCAL-MODE.md." >&2
       exit 1
       ;;
   esac
@@ -409,6 +409,6 @@ if [[ "$LOCAL_MODE" == "true" ]]; then
       echo "       rsync -avn ./ $REMOTE_HOST:\"$REMOTE_ROOT\"/"
       ;;
   esac
-  echo "  3. Read LOCAL-MODE.md, and review .hpc-assistant.json — its limits are the"
+  echo "  3. Read docs/LOCAL-MODE.md, and review .hpc-assistant.json — its limits are the"
   echo "     policy boundary the assistant enforces."
 fi

@@ -5,7 +5,7 @@ the user's own SSH connection.
 
 It exists so that a coding agent can work on cluster code from the user's own machine
 while the cluster only ever sees a narrow, rate-limited, audited set of operations. See
-[`LOCAL-MODE.md`](../LOCAL-MODE.md) one directory up.
+[`docs/LOCAL-MODE.md`](../docs/LOCAL-MODE.md) in the repository root.
 
 ## What it does and does not do
 

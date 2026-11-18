@@ -41,7 +41,7 @@
   },
 
   "file_access": {
-    "_comment": "How files are shared between the laptop and the cluster. Only `rsync` is supported: nothing here moves files by itself, so sync-to-remote.sh does it. See LOCAL-MODE.md.",
+    "_comment": "How files are shared between the laptop and the cluster. Only `rsync` is supported: nothing here moves files by itself, so sync-to-remote.sh does it. See docs/LOCAL-MODE.md.",
     "mode": "{{FILE_ACCESS_MODE}}",
     "local_root": "{{LOCAL_ROOT}}",
 
